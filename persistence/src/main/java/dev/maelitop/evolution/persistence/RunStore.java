@@ -151,6 +151,47 @@ public final class RunStore implements AutoCloseable {
     }
   }
 
+  public List<StoredRun> listRuns() {
+    String sql = "SELECT id, seed, config, generations, started_at FROM run ORDER BY id";
+    try (PreparedStatement statement = connection.prepareStatement(sql);
+        ResultSet rs = statement.executeQuery()) {
+      List<StoredRun> runs = new ArrayList<>();
+      while (rs.next()) {
+        WorldConfig config = mapper.readValue(rs.getString("config"), WorldConfig.class);
+        runs.add(
+            new StoredRun(
+                rs.getLong("id"),
+                rs.getLong("seed"),
+                config,
+                rs.getInt("generations"),
+                rs.getLong("started_at")));
+      }
+      return runs;
+    } catch (SQLException | JsonProcessingException e) {
+      throw new IllegalStateException("failed to list runs", e);
+    }
+  }
+
+  public Optional<StoredAgent> loadAgent(long agentId) {
+    String sql = "SELECT generation_id, genome_json, fitness FROM agent WHERE id = ?";
+    try (PreparedStatement statement = connection.prepareStatement(sql)) {
+      statement.setLong(1, agentId);
+      try (ResultSet rs = statement.executeQuery()) {
+        if (!rs.next()) {
+          return Optional.empty();
+        }
+        return Optional.of(
+            new StoredAgent(
+                agentId,
+                rs.getLong("generation_id"),
+                rs.getDouble("fitness"),
+                genomes.fromJson(rs.getString("genome_json"))));
+      }
+    } catch (SQLException e) {
+      throw new IllegalStateException("failed to load agent " + agentId, e);
+    }
+  }
+
   public List<GenerationStats> loadGenerations(long id) {
     String sql =
         "SELECT idx, best_fitness, mean_fitness, median_fitness, diversity, population"

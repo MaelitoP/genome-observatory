@@ -89,11 +89,42 @@ class RunStoreTest {
   }
 
   @Test
+  void listsRunsInInsertionOrder() {
+    try (RunStore store = open()) {
+      long first = store.startRun(1L, WorldConfig.defaults(), 3, 100L);
+      long second = store.startRun(2L, WorldConfig.defaults(), 5, 200L);
+
+      assertThat(store.listRuns())
+          .containsExactly(
+              new StoredRun(first, 1L, WorldConfig.defaults(), 3, 100L),
+              new StoredRun(second, 2L, WorldConfig.defaults(), 5, 200L));
+    }
+  }
+
+  @Test
+  void loadsAgentByIdWithGenome() {
+    RandomGenerator rng = RandomGeneratorFactory.of("L64X128MixRandom").create(4L);
+    Genome only = Genome.initial(14, OUTPUTS, rng);
+
+    try (RunStore store = open()) {
+      long runId = store.startRun(8L, WorldConfig.defaults(), 1, 0L);
+      store.recordGeneration(
+          runId, new GenerationStats(0, 4.0, 4.0, 4.0, 0.0, 1), List.of(new Evaluated(only, 4.0)));
+
+      StoredAgent agent = store.loadAgent(1L).orElseThrow();
+      assertThat(agent.fitness()).isEqualTo(4.0);
+      assertThat(agent.genome()).isEqualTo(only);
+    }
+  }
+
+  @Test
   void missingRunYieldsEmpty() {
     try (RunStore store = open()) {
       assertThat(store.loadRun(99L)).isEmpty();
       assertThat(store.loadGenerations(99L)).isEmpty();
       assertThat(store.loadOverallChampion(99L)).isEmpty();
+      assertThat(store.loadAgent(99L)).isEmpty();
+      assertThat(store.listRuns()).isEmpty();
     }
   }
 
