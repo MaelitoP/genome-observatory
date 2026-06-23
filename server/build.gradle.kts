@@ -3,6 +3,7 @@ plugins { application }
 dependencies {
   implementation(project(":protocol"))
   implementation(libs.javalin)
+  implementation(libs.slf4j.api)
   runtimeOnly(libs.logback.classic)
 
   testImplementation(libs.junit.jupiter)

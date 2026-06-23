@@ -46,7 +46,7 @@ public final class SimulationServer {
                 });
     app.start(port);
     long periodMs = 1000L / hello.tickRate();
-    ticker.scheduleAtFixedRate(this::tick, 0, periodMs, TimeUnit.MILLISECONDS);
+    var _ = ticker.scheduleAtFixedRate(this::tick, 0, periodMs, TimeUnit.MILLISECONDS);
     Runtime.getRuntime().addShutdownHook(new Thread(this::stop));
     log.info("Simulation server listening on ws://localhost:{}/world", port);
   }
@@ -69,13 +69,16 @@ public final class SimulationServer {
   private void tick() {
     world.step();
     String frame = json(world.snapshot());
-    for (WsContext ctx : sessions) {
-      try {
-        ctx.send(frame);
-      } catch (RuntimeException e) {
-        sessions.remove(ctx);
-        log.debug("dropping unreachable session", e);
-      }
+    sessions.removeIf(ctx -> !trySend(ctx, frame));
+  }
+
+  private boolean trySend(WsContext ctx, String frame) {
+    try {
+      ctx.send(frame);
+      return true;
+    } catch (RuntimeException e) {
+      log.debug("dropping unreachable session", e);
+      return false;
     }
   }
 

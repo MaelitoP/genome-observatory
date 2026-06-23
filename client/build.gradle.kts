@@ -6,6 +6,7 @@ dependencies {
   implementation(libs.gdx.backend.lwjgl3)
   runtimeOnly(variantOf(libs.gdx.platform) { classifier("natives-desktop") })
   implementation(libs.java.websocket)
+  implementation(libs.slf4j.api)
   runtimeOnly(libs.logback.classic)
 
   testImplementation(libs.junit.jupiter)
