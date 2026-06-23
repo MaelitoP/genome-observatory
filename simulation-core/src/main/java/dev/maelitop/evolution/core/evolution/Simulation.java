@@ -56,10 +56,22 @@ public final class Simulation {
     }
 
     GenerationStats stats =
-        new GenerationStats(generation, best, sum / evaluated.size(), evaluated.size());
+        new GenerationStats(
+            generation,
+            best,
+            sum / evaluated.size(),
+            median(evaluated),
+            Diversity.meanPairwiseDistance(evaluated.stream().map(Evaluated::genome).toList()),
+            evaluated.size());
     population = geneticAlgorithm.evolve(evaluated, config.population());
     generation++;
     return stats;
+  }
+
+  private static double median(List<Evaluated> evaluated) {
+    double[] sorted = evaluated.stream().mapToDouble(Evaluated::fitness).sorted().toArray();
+    int mid = sorted.length / 2;
+    return sorted.length % 2 == 0 ? (sorted[mid - 1] + sorted[mid]) / 2.0 : sorted[mid];
   }
 
   private World spawn() {

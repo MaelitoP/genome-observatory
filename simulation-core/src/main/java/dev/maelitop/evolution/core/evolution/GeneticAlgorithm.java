@@ -11,7 +11,7 @@ public final class GeneticAlgorithm {
   private static final int TOURNAMENT_SIZE = 3;
   private static final double ELITE_FRACTION = 0.1;
   private static final double MUTATION_RATE = 0.1;
-  private static final double MUTATION_STEP = 0.5;
+  private static final double MUTATION_SIGMA = 0.5;
 
   private final RandomGenerator rng;
   private final Mutation mutation;
@@ -34,7 +34,7 @@ public final class GeneticAlgorithm {
     }
     while (next.size() < targetSize) {
       Genome child = crossover.cross(select(ranked), select(ranked));
-      next.add(mutation.mutateWeights(child, MUTATION_RATE, MUTATION_STEP));
+      next.add(mutation.mutateWeights(child, MUTATION_RATE, MUTATION_SIGMA));
     }
     return next;
   }

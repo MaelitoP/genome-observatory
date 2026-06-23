@@ -14,11 +14,11 @@ public final class Mutation {
     this.rng = rng;
   }
 
-  public Genome mutateWeights(Genome genome, double rate, double step) {
+  public Genome mutateWeights(Genome genome, double rate, double sigma) {
     List<ConnectionGene> mutated = new ArrayList<>(genome.connections().size());
     for (ConnectionGene gene : genome.connections()) {
       if (rng.nextDouble() < rate) {
-        mutated.add(gene.withWeight(gene.weight() + rng.nextDouble(-step, step)));
+        mutated.add(gene.withWeight(gene.weight() + rng.nextGaussian() * sigma));
       } else {
         mutated.add(gene);
       }

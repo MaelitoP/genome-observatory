@@ -24,10 +24,12 @@ public final class Main {
     for (int g = 0; g < options.generations(); g++) {
       GenerationStats stats = simulation.runGeneration();
       log.info(
-          "gen={} best={} mean={} pop={}",
+          "gen={} best={} mean={} median={} diversity={} pop={}",
           stats.generation(),
           String.format(Locale.ROOT, "%.2f", stats.bestFitness()),
           String.format(Locale.ROOT, "%.2f", stats.meanFitness()),
+          String.format(Locale.ROOT, "%.2f", stats.medianFitness()),
+          String.format(Locale.ROOT, "%.3f", stats.diversity()),
           stats.population());
     }
   }
