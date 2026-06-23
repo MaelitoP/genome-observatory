@@ -4,4 +4,4 @@ dependencyResolutionManagement {
   repositories { mavenCentral() }
 }
 
-include("protocol", "simulation-core", "simulation-runner", "server", "client")
+include("protocol", "simulation-core", "simulation-runner", "persistence", "server", "client")

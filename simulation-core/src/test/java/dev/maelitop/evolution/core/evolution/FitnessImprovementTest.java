@@ -33,7 +33,7 @@ class FitnessImprovementTest {
             WorldConfig.defaults(), RandomGeneratorFactory.of("L64X128MixRandom").create(seed));
     List<GenerationStats> history = new ArrayList<>();
     for (int g = 0; g < GENERATIONS; g++) {
-      history.add(simulation.runGeneration());
+      history.add(simulation.runGeneration().stats());
     }
     return history;
   }

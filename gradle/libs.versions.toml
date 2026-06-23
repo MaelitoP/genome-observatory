@@ -1,5 +1,6 @@
 [versions]
 jackson = "2.18.2"
+sqlite = "3.49.1.0"
 javalin = "6.7.0"
 gdx = "1.13.1"
 javaWebsocket = "1.6.0"
@@ -10,6 +11,7 @@ assertj = "3.27.0"
 
 [libraries]
 jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite" }
 javalin = { module = "io.javalin:javalin", version.ref = "javalin" }
 gdx-core = { module = "com.badlogicgames.gdx:gdx", version.ref = "gdx" }
 gdx-backend-lwjgl3 = { module = "com.badlogicgames.gdx:gdx-backend-lwjgl3", version.ref = "gdx" }

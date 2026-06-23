@@ -43,4 +43,35 @@ class RunOptionsTest {
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("generations must be positive");
   }
+
+  @Test
+  void parsesPersistenceFlags() {
+    RunOptions options =
+        RunOptions.parse(new String[] {"--db", "runs.db", "--export-champion", "champion.json"});
+
+    assertThat(options.dbPath()).isEqualTo("runs.db");
+    assertThat(options.exportChampionPath()).isEqualTo("champion.json");
+    assertThat(options.replayRunId()).isNull();
+  }
+
+  @Test
+  void parsesReplayWithDb() {
+    RunOptions options = RunOptions.parse(new String[] {"--db", "runs.db", "--replay", "7"});
+
+    assertThat(options.replayRunId()).isEqualTo(7L);
+  }
+
+  @Test
+  void rejectsReplayWithoutDb() {
+    assertThatThrownBy(() -> RunOptions.parse(new String[] {"--replay", "1"}))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("--replay requires --db");
+  }
+
+  @Test
+  void rejectsExportWithoutDb() {
+    assertThatThrownBy(() -> RunOptions.parse(new String[] {"--export-champion", "c.json"}))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("--export-champion requires --db");
+  }
 }

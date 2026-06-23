@@ -2,6 +2,7 @@ plugins { application }
 
 dependencies {
   implementation(project(":simulation-core"))
+  implementation(project(":persistence"))
   implementation(libs.slf4j.api)
   runtimeOnly(libs.logback.classic)
 

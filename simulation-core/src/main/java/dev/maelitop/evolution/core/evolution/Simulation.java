@@ -38,7 +38,7 @@ public final class Simulation {
     }
   }
 
-  public GenerationStats runGeneration() {
+  public GenerationResult runGeneration() {
     World world = spawn();
     int ticks = (int) Math.round(config.generationSeconds() * config.tickRate());
     for (int t = 0; t < ticks && world.aliveCount() > 0; t++) {
@@ -65,7 +65,7 @@ public final class Simulation {
             evaluated.size());
     population = geneticAlgorithm.evolve(evaluated, config.population());
     generation++;
-    return stats;
+    return new GenerationResult(stats, evaluated);
   }
 
   private static double median(List<Evaluated> evaluated) {
