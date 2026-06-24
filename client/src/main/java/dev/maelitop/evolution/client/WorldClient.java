@@ -1,6 +1,7 @@
 package dev.maelitop.evolution.client;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import dev.maelitop.evolution.protocol.ClientMessage;
 import dev.maelitop.evolution.protocol.GenerationSummary;
 import dev.maelitop.evolution.protocol.HelloMessage;
 import dev.maelitop.evolution.protocol.ProtocolJson;
@@ -53,6 +54,17 @@ final class WorldClient extends WebSocketClient {
   @Override
   public void onError(Exception ex) {
     log.warn("websocket error", ex);
+  }
+
+  void send(ClientMessage message) {
+    if (!isOpen()) {
+      return;
+    }
+    try {
+      send(ProtocolJson.mapper().writeValueAsString(message));
+    } catch (JsonProcessingException e) {
+      log.warn("dropping unserializable control message {}", message, e);
+    }
   }
 
   WorldSnapshot snapshot() {

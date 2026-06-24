@@ -25,6 +25,7 @@ final class EvolutionClient extends ApplicationAdapter {
   private static final float FOOD_RADIUS = 4f;
 
   private final WorldClient client;
+  private final ControlInput control = new ControlInput();
   private OrthographicCamera camera;
   private ShapeRenderer shapes;
   private SpriteBatch batch;
@@ -56,6 +57,7 @@ final class EvolutionClient extends ApplicationAdapter {
   public void render() {
     centerOnWorld();
     handlePan();
+    handleControl();
     camera.update();
 
     ScreenUtils.clear(0, 0, 0, 1);
@@ -90,6 +92,21 @@ final class EvolutionClient extends ApplicationAdapter {
     }
     if (Gdx.input.isKeyPressed(Keys.DOWN)) {
       camera.position.y -= step;
+    }
+  }
+
+  private void handleControl() {
+    if (Gdx.input.isKeyJustPressed(Keys.P)) {
+      control.on(ControlInput.Command.TOGGLE_PAUSE).ifPresent(client::send);
+    }
+    if (Gdx.input.isKeyJustPressed(Keys.SPACE)) {
+      control.on(ControlInput.Command.STEP).ifPresent(client::send);
+    }
+    if (Gdx.input.isKeyJustPressed(Keys.RIGHT_BRACKET)) {
+      control.on(ControlInput.Command.FASTER).ifPresent(client::send);
+    }
+    if (Gdx.input.isKeyJustPressed(Keys.LEFT_BRACKET)) {
+      control.on(ControlInput.Command.SLOWER).ifPresent(client::send);
     }
   }
 
@@ -145,7 +162,13 @@ final class EvolutionClient extends ApplicationAdapter {
     String line =
         snap == null
             ? "Connecting to ws://localhost:7070/world ..."
-            : "tick=" + snap.tick() + "  gen=" + snap.generation() + "  pop=" + snap.population();
+            : "tick="
+                + snap.tick()
+                + "  gen="
+                + snap.generation()
+                + "  pop="
+                + snap.population()
+                + (control.paused() ? "  [PAUSED]" : "");
     font.draw(batch, line, 10, Gdx.graphics.getHeight() - 10f);
     batch.end();
   }
