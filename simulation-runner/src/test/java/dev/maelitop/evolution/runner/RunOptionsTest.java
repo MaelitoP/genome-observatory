@@ -74,4 +74,37 @@ class RunOptionsTest {
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("--export-champion requires --db");
   }
+
+  @Test
+  void defaultsToWeightsStrategyWithoutCarnivores() {
+    RunOptions options = RunOptions.parse(new String[] {});
+
+    assertThat(options.strategy()).isEqualTo(Strategy.WEIGHTS);
+    assertThat(options.coEvolution()).isFalse();
+  }
+
+  @Test
+  void parsesNeatStrategyAndCarnivores() {
+    RunOptions options =
+        RunOptions.parse(new String[] {"--strategy", "neat", "--carnivores", "10"});
+
+    assertThat(options.strategy()).isEqualTo(Strategy.NEAT);
+    assertThat(options.carnivores()).isEqualTo(10);
+    assertThat(options.coEvolution()).isTrue();
+  }
+
+  @Test
+  void rejectsUnknownStrategy() {
+    assertThatThrownBy(() -> RunOptions.parse(new String[] {"--strategy", "magic"}))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("unknown strategy");
+  }
+
+  @Test
+  void rejectsCoEvolutionWithDb() {
+    assertThatThrownBy(
+            () -> RunOptions.parse(new String[] {"--carnivores", "5", "--db", "runs.db"}))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("co-evolution runs do not support --db");
+  }
 }

@@ -118,6 +118,10 @@ public final class Creature implements Entity {
     energyGained += energy - before;
   }
 
+  public void takeDamage(double amount) {
+    energy -= amount;
+  }
+
   public void die() {
     alive = false;
   }

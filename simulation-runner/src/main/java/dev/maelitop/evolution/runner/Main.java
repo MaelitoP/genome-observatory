@@ -2,6 +2,8 @@ package dev.maelitop.evolution.runner;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.maelitop.evolution.core.domain.WorldConfig;
+import dev.maelitop.evolution.core.evolution.CoEvolution;
+import dev.maelitop.evolution.core.evolution.CoEvolutionResult;
 import dev.maelitop.evolution.core.evolution.GenerationResult;
 import dev.maelitop.evolution.core.evolution.GenerationStats;
 import dev.maelitop.evolution.core.evolution.Simulation;
@@ -26,8 +28,16 @@ public final class Main {
 
   public static void main(String[] args) {
     RunOptions options = RunOptions.parse(args);
+    if (options.coEvolution()) {
+      runCoEvolution(WorldConfig.defaults(), options);
+      return;
+    }
     if (options.dbPath() == null) {
-      run(simulation(WorldConfig.defaults(), options.seed()), options.generations(), null, 0);
+      run(
+          simulation(WorldConfig.defaults(), options.seed(), options.strategy()),
+          options.generations(),
+          null,
+          0);
       return;
     }
 
@@ -35,7 +45,7 @@ public final class Main {
     try (RunStore store = new RunStore("jdbc:sqlite:" + options.dbPath(), mapper)) {
       long runId =
           options.replayRunId() != null
-              ? replay(store, options.replayRunId())
+              ? replay(store, options.replayRunId(), options)
               : freshRun(store, options);
       if (options.exportChampionPath() != null) {
         Genome champion =
@@ -54,11 +64,15 @@ public final class Main {
     long runId =
         store.startRun(options.seed(), config, options.generations(), System.currentTimeMillis());
     log.info("seed={} generations={} run={}", options.seed(), options.generations(), runId);
-    run(simulation(config, options.seed()), options.generations(), store, runId);
+    run(
+        simulation(config, options.seed(), options.strategy()),
+        options.generations(),
+        store,
+        runId);
     return runId;
   }
 
-  private static long replay(RunStore store, long originalId) {
+  private static long replay(RunStore store, long originalId, RunOptions options) {
     StoredRun original =
         store
             .loadRun(originalId)
@@ -69,7 +83,11 @@ public final class Main {
             original.seed(), original.config(), original.generations(), System.currentTimeMillis());
     log.info("replaying run {} from seed={} as run {}", originalId, original.seed(), runId);
     List<GenerationStats> replayStats =
-        run(simulation(original.config(), original.seed()), original.generations(), store, runId);
+        run(
+            simulation(original.config(), original.seed(), options.strategy()),
+            original.generations(),
+            store,
+            runId);
     log.info("replay identical to run {}: {}", originalId, replayStats.equals(originalStats));
     return runId;
   }
@@ -96,8 +114,37 @@ public final class Main {
     return history;
   }
 
-  private static Simulation simulation(WorldConfig config, long seed) {
+  private static void runCoEvolution(WorldConfig config, RunOptions options) {
+    RandomGenerator rng = RandomGeneratorFactory.of("L64X128MixRandom").create(options.seed());
+    CoEvolution coEvolution =
+        new CoEvolution(
+            config,
+            rng,
+            options.strategy().create(rng),
+            options.strategy().create(rng),
+            config.population(),
+            options.carnivores());
+    log.info(
+        "seed={} generations={} strategy={} herbivores={} carnivores={}",
+        options.seed(),
+        options.generations(),
+        options.strategy().flag(),
+        config.population(),
+        options.carnivores());
+    for (int g = 0; g < options.generations(); g++) {
+      CoEvolutionResult result = coEvolution.runGeneration();
+      log.info(
+          "gen={} herbivore[best={} mean={}] carnivore[best={} mean={}]",
+          result.herbivores().generation(),
+          String.format(Locale.ROOT, "%.2f", result.herbivores().bestFitness()),
+          String.format(Locale.ROOT, "%.2f", result.herbivores().meanFitness()),
+          String.format(Locale.ROOT, "%.2f", result.carnivores().bestFitness()),
+          String.format(Locale.ROOT, "%.2f", result.carnivores().meanFitness()));
+    }
+  }
+
+  private static Simulation simulation(WorldConfig config, long seed, Strategy strategy) {
     RandomGenerator rng = RandomGeneratorFactory.of("L64X128MixRandom").create(seed);
-    return new Simulation(config, rng);
+    return new Simulation(config, rng, strategy.create(rng));
   }
 }

@@ -8,6 +8,7 @@ import dev.maelitop.evolution.core.neural.ConnectionGene;
 import dev.maelitop.evolution.core.neural.Genome;
 import dev.maelitop.evolution.core.neural.NodeGene;
 import dev.maelitop.evolution.core.neural.NodeType;
+import dev.maelitop.evolution.core.neural.WeightDistance;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -17,17 +18,22 @@ class DiversityTest {
   void isZeroForIdenticalGenomes() {
     Genome g = genome(0.5);
 
-    assertThat(Diversity.meanPairwiseDistance(List.of(g, g, g))).isZero();
+    assertThat(Diversity.meanPairwiseDistance(List.of(g, g, g), WeightDistance::euclidean))
+        .isZero();
   }
 
   @Test
   void averagesEuclideanWeightDistanceAcrossPairs() {
-    assertThat(Diversity.meanPairwiseDistance(List.of(genome(0.0), genome(3.0)))).isEqualTo(3.0);
+    assertThat(
+            Diversity.meanPairwiseDistance(
+                List.of(genome(0.0), genome(3.0)), WeightDistance::euclidean))
+        .isEqualTo(3.0);
   }
 
   @Test
   void isZeroForSingleton() {
-    assertThat(Diversity.meanPairwiseDistance(List.of(genome(1.0)))).isZero();
+    assertThat(Diversity.meanPairwiseDistance(List.of(genome(1.0)), WeightDistance::euclidean))
+        .isZero();
   }
 
   @Test
@@ -38,7 +44,8 @@ class DiversityTest {
             small.nodes(),
             List.of(small.connections().get(0), small.connections().get(0).withWeight(1.0)));
 
-    assertThatThrownBy(() -> Diversity.meanPairwiseDistance(List.of(small, large)))
+    assertThatThrownBy(
+            () -> Diversity.meanPairwiseDistance(List.of(small, large), WeightDistance::euclidean))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("divergent structure");
   }

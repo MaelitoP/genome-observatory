@@ -16,16 +16,16 @@ public final class Crossover {
     this.rng = rng;
   }
 
-  public Genome cross(Genome a, Genome b) {
-    Map<Integer, ConnectionGene> fromB = new HashMap<>(b.connections().size() * 2);
-    for (ConnectionGene gene : b.connections()) {
-      fromB.put(gene.innovation(), gene);
+  public Genome cross(Genome fitter, Genome other) {
+    Map<Integer, ConnectionGene> otherByInnovation = new HashMap<>(other.connections().size() * 2);
+    for (ConnectionGene gene : other.connections()) {
+      otherByInnovation.put(gene.innovation(), gene);
     }
-    List<ConnectionGene> child = new ArrayList<>(a.connections().size());
-    for (ConnectionGene gene : a.connections()) {
-      ConnectionGene match = fromB.get(gene.innovation());
+    List<ConnectionGene> child = new ArrayList<>(fitter.connections().size());
+    for (ConnectionGene gene : fitter.connections()) {
+      ConnectionGene match = otherByInnovation.get(gene.innovation());
       child.add(match != null && rng.nextBoolean() ? match : gene);
     }
-    return new Genome(a.nodes(), child);
+    return new Genome(fitter.nodes(), child);
   }
 }

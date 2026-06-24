@@ -48,6 +48,7 @@ public final class SimulationEngine {
     }
 
     feed(world);
+    attack(world);
 
     for (Creature creature : world.creatures()) {
       if (creature.alive()
@@ -162,6 +163,45 @@ public final class SimulationEngine {
       }
     }
     world.removeFood(eaten);
+  }
+
+  private void attack(World world) {
+    boolean anyAttacker = false;
+    for (Creature creature : world.creatures()) {
+      if (creature.alive() && creature.team() == Team.CARNIVORE && creature.spikeLength() > 0) {
+        anyAttacker = true;
+        break;
+      }
+    }
+    if (!anyAttacker) {
+      return;
+    }
+
+    Quadtree<Creature> index = new Quadtree<>(bounds, 8, 8);
+    for (Creature creature : world.creatures()) {
+      if (creature.alive()) {
+        index.insert(creature.position().x(), creature.position().y(), creature);
+      }
+    }
+
+    double damage = config.spikeDamagePerSecond() * dt;
+    for (Creature attacker : world.creatures()) {
+      if (!attacker.alive() || attacker.team() != Team.CARNIVORE || attacker.spikeLength() <= 0) {
+        continue;
+      }
+      double reach = attacker.spikeLength();
+      Vec2 at = attacker.position();
+      Rectangle area = new Rectangle(at.x() - reach, at.y() - reach, 2 * reach, 2 * reach);
+      for (Creature target : index.query(area)) {
+        if (target == attacker || !target.alive() || target.team() == attacker.team()) {
+          continue;
+        }
+        if (at.distanceTo(target.position()) <= reach) {
+          target.takeDamage(damage);
+          attacker.eat(damage * config.carnivoreEnergyRecovery(), config.maxEnergy());
+        }
+      }
+    }
   }
 
   private static double normalizeAngle(double angle) {

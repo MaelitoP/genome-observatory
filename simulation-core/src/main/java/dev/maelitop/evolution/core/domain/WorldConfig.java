@@ -19,6 +19,8 @@ public record WorldConfig(
     double visionRange,
     double fieldOfView,
     double spikeMaxLength,
+    double spikeDamagePerSecond,
+    double carnivoreEnergyRecovery,
     FitnessWeights fitness) {
 
   public WorldConfig {
@@ -40,6 +42,12 @@ public record WorldConfig(
     if (visionRange <= 0 || fieldOfView <= 0 || spikeMaxLength <= 0) {
       throw new IllegalArgumentException(
           "visionRange, fieldOfView and spikeMaxLength must be positive");
+    }
+    if (spikeDamagePerSecond < 0) {
+      throw new IllegalArgumentException("spikeDamagePerSecond must not be negative");
+    }
+    if (carnivoreEnergyRecovery < 0 || carnivoreEnergyRecovery > 1) {
+      throw new IllegalArgumentException("carnivoreEnergyRecovery must be within [0, 1]");
     }
   }
 
@@ -63,6 +71,8 @@ public record WorldConfig(
         150.0,
         Math.toRadians(120),
         40.0,
+        20.0,
+        0.5,
         new FitnessWeights(1.0, 3.0, 0.1, 0.0));
   }
 }

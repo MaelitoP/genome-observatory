@@ -1,12 +1,14 @@
 package dev.maelitop.evolution.core.evolution;
 
 import dev.maelitop.evolution.core.neural.Genome;
+import dev.maelitop.evolution.core.neural.GenomeDistance;
+import dev.maelitop.evolution.core.neural.WeightDistance;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.random.RandomGenerator;
 
-public final class GeneticAlgorithm {
+public final class WeightsOnlyStrategy implements EvolutionStrategy {
 
   private static final int TOURNAMENT_SIZE = 3;
   private static final double ELITE_FRACTION = 0.1;
@@ -17,12 +19,13 @@ public final class GeneticAlgorithm {
   private final Mutation mutation;
   private final Crossover crossover;
 
-  public GeneticAlgorithm(RandomGenerator rng) {
+  public WeightsOnlyStrategy(RandomGenerator rng) {
     this.rng = rng;
     this.mutation = new Mutation(rng);
     this.crossover = new Crossover(rng);
   }
 
+  @Override
   public List<Genome> evolve(List<Evaluated> population, int targetSize) {
     List<Evaluated> ranked = new ArrayList<>(population);
     ranked.sort(Comparator.comparingDouble(Evaluated::fitness).reversed());
@@ -37,6 +40,11 @@ public final class GeneticAlgorithm {
       next.add(mutation.mutateWeights(child, MUTATION_RATE, MUTATION_SIGMA));
     }
     return next;
+  }
+
+  @Override
+  public GenomeDistance distance() {
+    return WeightDistance::euclidean;
   }
 
   private Genome select(List<Evaluated> ranked) {

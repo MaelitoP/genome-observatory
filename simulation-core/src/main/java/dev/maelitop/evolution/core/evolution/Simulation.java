@@ -21,17 +21,21 @@ public final class Simulation {
   private final WorldConfig config;
   private final RandomGenerator rng;
   private final SimulationEngine engine;
-  private final GeneticAlgorithm geneticAlgorithm;
+  private final EvolutionStrategy strategy;
 
   private List<Genome> population;
   private long nextCreatureId = 1;
   private int generation;
 
   public Simulation(WorldConfig config, RandomGenerator rng) {
+    this(config, rng, new WeightsOnlyStrategy(rng));
+  }
+
+  public Simulation(WorldConfig config, RandomGenerator rng, EvolutionStrategy strategy) {
     this.config = config;
     this.rng = rng;
     this.engine = new SimulationEngine(config, rng);
-    this.geneticAlgorithm = new GeneticAlgorithm(rng);
+    this.strategy = strategy;
     this.population = new ArrayList<>(config.population());
     for (int i = 0; i < config.population(); i++) {
       population.add(Genome.initial(SimulationEngine.INPUT_COUNT, OUTPUT_ACTIVATIONS, rng));
@@ -46,32 +50,14 @@ public final class Simulation {
     }
 
     List<Evaluated> evaluated = new ArrayList<>(world.creatures().size());
-    double best = Double.NEGATIVE_INFINITY;
-    double sum = 0;
     for (Creature creature : world.creatures()) {
-      double fitness = Fitness.of(creature, config.fitness());
-      evaluated.add(new Evaluated(creature.genome(), fitness));
-      best = Math.max(best, fitness);
-      sum += fitness;
+      evaluated.add(new Evaluated(creature.genome(), Fitness.of(creature, config.fitness())));
     }
 
-    GenerationStats stats =
-        new GenerationStats(
-            generation,
-            best,
-            sum / evaluated.size(),
-            median(evaluated),
-            Diversity.meanPairwiseDistance(evaluated.stream().map(Evaluated::genome).toList()),
-            evaluated.size());
-    population = geneticAlgorithm.evolve(evaluated, config.population());
+    GenerationStats stats = GenerationStats.summarize(generation, evaluated, strategy.distance());
+    population = strategy.evolve(evaluated, config.population());
     generation++;
     return new GenerationResult(stats, evaluated);
-  }
-
-  private static double median(List<Evaluated> evaluated) {
-    double[] sorted = evaluated.stream().mapToDouble(Evaluated::fitness).sorted().toArray();
-    int mid = sorted.length / 2;
-    return sorted.length % 2 == 0 ? (sorted[mid - 1] + sorted[mid]) / 2.0 : sorted[mid];
   }
 
   private World spawn() {

@@ -141,6 +141,8 @@ class RestApiTest {
         50.0,
         Math.toRadians(120),
         40.0,
+        20.0,
+        0.5,
         new FitnessWeights(1.0, 3.0, 0.1, 0.0));
   }
 }

@@ -114,6 +114,8 @@ class SimulationEngineTest {
         d.visionRange(),
         d.fieldOfView(),
         d.spikeMaxLength(),
+        d.spikeDamagePerSecond(),
+        d.carnivoreEnergyRecovery(),
         d.fitness());
   }
 }

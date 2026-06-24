@@ -11,13 +11,13 @@ import java.util.Random;
 import java.util.random.RandomGenerator;
 import org.junit.jupiter.api.Test;
 
-class GeneticAlgorithmTest {
+class WeightsOnlyStrategyTest {
 
   private final List<Evaluated> population = population();
 
   @Test
   void producesRequestedPopulationSize() {
-    List<Genome> next = new GeneticAlgorithm(new Random(1L)).evolve(population, 10);
+    List<Genome> next = new WeightsOnlyStrategy(new Random(1L)).evolve(population, 10);
 
     assertThat(next).hasSize(10);
   }
@@ -27,15 +27,15 @@ class GeneticAlgorithmTest {
     Evaluated champion =
         population.stream().max(Comparator.comparingDouble(Evaluated::fitness)).orElseThrow();
 
-    List<Genome> next = new GeneticAlgorithm(new Random(1L)).evolve(population, 10);
+    List<Genome> next = new WeightsOnlyStrategy(new Random(1L)).evolve(population, 10);
 
     assertThat(next).contains(champion.genome());
   }
 
   @Test
   void isReproducibleForAGivenSeed() {
-    List<Genome> first = new GeneticAlgorithm(new Random(7L)).evolve(population, 10);
-    List<Genome> second = new GeneticAlgorithm(new Random(7L)).evolve(population, 10);
+    List<Genome> first = new WeightsOnlyStrategy(new Random(7L)).evolve(population, 10);
+    List<Genome> second = new WeightsOnlyStrategy(new Random(7L)).evolve(population, 10);
 
     assertThat(first).isEqualTo(second);
   }
