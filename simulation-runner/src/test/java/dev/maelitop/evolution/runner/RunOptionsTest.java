@@ -101,10 +101,11 @@ class RunOptionsTest {
   }
 
   @Test
-  void rejectsCoEvolutionWithDb() {
-    assertThatThrownBy(
-            () -> RunOptions.parse(new String[] {"--carnivores", "5", "--db", "runs.db"}))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("co-evolution runs do not support --db");
+  void allowsCoEvolutionWithDb() {
+    RunOptions options = RunOptions.parse(new String[] {"--carnivores", "5", "--db", "runs.db"});
+
+    assertThat(options.carnivores()).isEqualTo(5);
+    assertThat(options.dbPath()).isEqualTo("runs.db");
+    assertThat(options.coEvolution()).isTrue();
   }
 }

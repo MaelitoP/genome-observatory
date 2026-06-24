@@ -25,9 +25,6 @@ public record RunOptions(
     if (exportChampionPath != null && dbPath == null) {
       throw new IllegalArgumentException("--export-champion requires --db");
     }
-    if (carnivores > 0 && dbPath != null) {
-      throw new IllegalArgumentException("co-evolution runs do not support --db");
-    }
   }
 
   public boolean coEvolution() {

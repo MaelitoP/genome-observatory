@@ -70,14 +70,18 @@ public final class CoEvolution {
       }
     }
 
-    GenerationStats herbivoreStats =
-        GenerationStats.summarize(generation, herbivoreScores, herbivoreStrategy.distance());
-    GenerationStats carnivoreStats =
-        GenerationStats.summarize(generation, carnivoreScores, carnivoreStrategy.distance());
+    GenerationResult herbivoreResult =
+        new GenerationResult(
+            GenerationStats.summarize(generation, herbivoreScores, herbivoreStrategy.distance()),
+            herbivoreScores);
+    GenerationResult carnivoreResult =
+        new GenerationResult(
+            GenerationStats.summarize(generation, carnivoreScores, carnivoreStrategy.distance()),
+            carnivoreScores);
     herbivores = herbivoreStrategy.evolve(herbivoreScores, herbivoreCount);
     carnivores = carnivoreStrategy.evolve(carnivoreScores, carnivoreCount);
     generation++;
-    return new CoEvolutionResult(herbivoreStats, carnivoreStats);
+    return new CoEvolutionResult(herbivoreResult, carnivoreResult);
   }
 
   private World spawn() {

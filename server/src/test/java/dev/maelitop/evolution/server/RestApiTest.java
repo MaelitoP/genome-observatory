@@ -55,15 +55,42 @@ class RestApiTest {
         () -> get("/runs/" + runId + "/generations").size() == 2, Duration.ofSeconds(30));
 
     assertThat(get("/runs").size()).isEqualTo(1);
-    assertThat(get("/runs/" + runId + "/stats").get("generations").asInt()).isEqualTo(2);
+
+    JsonNode stats = get("/runs/" + runId + "/stats");
+    assertThat(stats.size()).isEqualTo(1);
+    assertThat(stats.get(0).get("team").asText()).isEqualTo("HERBIVORE");
+    assertThat(stats.get(0).get("stats").get("generations").asInt()).isEqualTo(2);
 
     JsonNode agent = get("/agents/1");
     assertThat(agent.get("id").asLong()).isEqualTo(1);
+    assertThat(agent.get("team").asText()).isEqualTo("HERBIVORE");
     assertThat(agent.get("genome").has("connections")).isTrue();
 
     HttpResponse<String> export = send("GET", "/export/agents/1", null);
     assertThat(export.statusCode()).isEqualTo(200);
     assertThat(export.headers().firstValue("Content-Disposition")).isPresent();
+  }
+
+  @Test
+  void runsAndInspectsCoEvolutionPerTeam() throws Exception {
+    JsonNode created = post("/runs", "{\"seed\":3,\"generations\":2,\"carnivores\":3}", 201);
+    long runId = created.get("id").asLong();
+    assertThat(created.get("carnivores").asInt()).isEqualTo(3);
+
+    awaitCondition(
+        () -> get("/runs/" + runId + "/generations").size() == 4, Duration.ofSeconds(30));
+
+    JsonNode carnivoreGenerations = get("/runs/" + runId + "/generations?team=CARNIVORE");
+    assertThat(carnivoreGenerations.size()).isEqualTo(2);
+    assertThat(carnivoreGenerations.get(0).get("team").asText()).isEqualTo("CARNIVORE");
+    assertThat(get("/runs/" + runId + "/stats").size()).isEqualTo(2);
+    assertThat(get("/runs/" + runId + "/champion?team=HERBIVORE").has("connections")).isTrue();
+  }
+
+  @Test
+  void championRequiresAValidTeam() throws Exception {
+    assertThat(send("GET", "/runs/1/champion", null).statusCode()).isEqualTo(400);
+    assertThat(send("GET", "/runs/1/champion?team=INVALID", null).statusCode()).isEqualTo(400);
   }
 
   @Test

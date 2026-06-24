@@ -1,3 +1,3 @@
 package dev.maelitop.evolution.core.evolution;
 
-public record CoEvolutionResult(GenerationStats herbivores, GenerationStats carnivores) {}
+public record CoEvolutionResult(GenerationResult herbivores, GenerationResult carnivores) {}

@@ -1,12 +1,19 @@
 package dev.maelitop.evolution.server;
 
+import dev.maelitop.evolution.core.domain.Team;
 import dev.maelitop.evolution.core.domain.WorldConfig;
+import dev.maelitop.evolution.core.evolution.CoEvolution;
+import dev.maelitop.evolution.core.evolution.CoEvolutionResult;
 import dev.maelitop.evolution.core.evolution.GenerationResult;
-import dev.maelitop.evolution.core.evolution.GenerationStats;
 import dev.maelitop.evolution.core.evolution.Simulation;
+import dev.maelitop.evolution.core.evolution.WeightsOnlyStrategy;
+import dev.maelitop.evolution.core.neural.Genome;
+import dev.maelitop.evolution.persistence.GenerationRecord;
+import dev.maelitop.evolution.persistence.RunSpec;
 import dev.maelitop.evolution.persistence.RunStore;
 import dev.maelitop.evolution.persistence.StoredAgent;
 import dev.maelitop.evolution.persistence.StoredRun;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
@@ -32,12 +39,14 @@ public final class RunService implements AutoCloseable {
     this.config = config;
   }
 
-  public long start(long seed, int generations) {
+  public long start(long seed, int generations, int carnivores) {
     long runId;
     synchronized (lock) {
-      runId = store.startRun(seed, config, generations, System.currentTimeMillis());
+      runId =
+          store.startRun(
+              new RunSpec(seed, config, generations, carnivores, System.currentTimeMillis()));
     }
-    var _ = runner.submit(() -> execute(runId, seed, generations));
+    var _ = runner.submit(() -> execute(runId, seed, generations, carnivores));
     return runId;
   }
 
@@ -53,9 +62,17 @@ public final class RunService implements AutoCloseable {
     }
   }
 
-  public List<GenerationStats> generations(long id) {
+  public List<GenerationRecord> generations(long id) {
     synchronized (lock) {
-      return store.loadGenerations(id);
+      return store.loadGenerationRecords(id);
+    }
+  }
+
+  public List<GenerationRecord> generations(long id, Team team) {
+    synchronized (lock) {
+      return store.loadGenerations(id, team).stream()
+          .map(stats -> new GenerationRecord(team, stats))
+          .toList();
     }
   }
 
@@ -65,27 +82,70 @@ public final class RunService implements AutoCloseable {
     }
   }
 
-  public Optional<RunStats> stats(long id) {
+  public Optional<Genome> champion(long id, Team team) {
     synchronized (lock) {
-      if (store.loadRun(id).isEmpty()) {
-        return Optional.empty();
-      }
-      return Optional.of(RunStats.of(id, store.loadGenerations(id)));
+      return store.loadChampion(id, team);
     }
   }
 
-  private void execute(long runId, long seed, int generations) {
+  public Optional<List<TeamRunStats>> stats(long id) {
+    synchronized (lock) {
+      Optional<StoredRun> run = store.loadRun(id);
+      if (run.isEmpty()) {
+        return Optional.empty();
+      }
+      List<TeamRunStats> perTeam = new ArrayList<>();
+      for (Team team : teamsOf(run.get())) {
+        perTeam.add(new TeamRunStats(team, RunStats.of(id, store.loadGenerations(id, team))));
+      }
+      return Optional.of(perTeam);
+    }
+  }
+
+  private static List<Team> teamsOf(StoredRun run) {
+    return run.carnivores() > 0 ? List.of(Team.HERBIVORE, Team.CARNIVORE) : List.of(Team.HERBIVORE);
+  }
+
+  private void execute(long runId, long seed, int generations, int carnivores) {
     RandomGenerator rng = RandomGeneratorFactory.of("L64X128MixRandom").create(seed);
-    Simulation simulation = new Simulation(config, rng);
     try {
-      for (int g = 0; g < generations; g++) {
-        GenerationResult result = simulation.runGeneration();
-        synchronized (lock) {
-          store.recordGeneration(runId, result.stats(), result.population());
-        }
+      if (carnivores > 0) {
+        runCoEvolution(runId, rng, generations, carnivores);
+      } else {
+        runSingle(runId, rng, generations);
       }
     } catch (RuntimeException e) {
       log.error("run {} aborted", runId, e);
+    }
+  }
+
+  private void runSingle(long runId, RandomGenerator rng, int generations) {
+    Simulation simulation = new Simulation(config, rng);
+    for (int g = 0; g < generations; g++) {
+      GenerationResult result = simulation.runGeneration();
+      synchronized (lock) {
+        store.recordGeneration(runId, Team.HERBIVORE, result.stats(), result.population());
+      }
+    }
+  }
+
+  private void runCoEvolution(long runId, RandomGenerator rng, int generations, int carnivores) {
+    CoEvolution coEvolution =
+        new CoEvolution(
+            config,
+            rng,
+            new WeightsOnlyStrategy(rng),
+            new WeightsOnlyStrategy(rng),
+            config.population(),
+            carnivores);
+    for (int g = 0; g < generations; g++) {
+      CoEvolutionResult result = coEvolution.runGeneration();
+      synchronized (lock) {
+        store.recordGeneration(
+            runId, Team.HERBIVORE, result.herbivores().stats(), result.herbivores().population());
+        store.recordGeneration(
+            runId, Team.CARNIVORE, result.carnivores().stats(), result.carnivores().population());
+      }
     }
   }
 

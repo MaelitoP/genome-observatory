@@ -23,8 +23,8 @@ class CoEvolutionTest {
   @Test
   void bothPopulationsKeepTheirSizeEachGeneration() {
     for (CoEvolutionResult result : run(1L, 3)) {
-      assertThat(result.herbivores().population()).isEqualTo(HERBIVORES);
-      assertThat(result.carnivores().population()).isEqualTo(CARNIVORES);
+      assertThat(result.herbivores().stats().population()).isEqualTo(HERBIVORES);
+      assertThat(result.carnivores().stats().population()).isEqualTo(CARNIVORES);
     }
   }
 

@@ -1,6 +1,7 @@
 package dev.maelitop.evolution.runner;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.maelitop.evolution.core.domain.Team;
 import dev.maelitop.evolution.core.domain.WorldConfig;
 import dev.maelitop.evolution.core.evolution.CoEvolution;
 import dev.maelitop.evolution.core.evolution.CoEvolutionResult;
@@ -9,6 +10,7 @@ import dev.maelitop.evolution.core.evolution.GenerationStats;
 import dev.maelitop.evolution.core.evolution.Simulation;
 import dev.maelitop.evolution.core.neural.Genome;
 import dev.maelitop.evolution.persistence.GenomeCodec;
+import dev.maelitop.evolution.persistence.RunSpec;
 import dev.maelitop.evolution.persistence.RunStore;
 import dev.maelitop.evolution.persistence.StoredRun;
 import java.nio.file.Path;
@@ -28,16 +30,20 @@ public final class Main {
 
   public static void main(String[] args) {
     RunOptions options = RunOptions.parse(args);
-    if (options.coEvolution()) {
-      runCoEvolution(WorldConfig.defaults(), options);
-      return;
-    }
+    WorldConfig config = WorldConfig.defaults();
     if (options.dbPath() == null) {
-      run(
-          simulation(WorldConfig.defaults(), options.seed(), options.strategy()),
-          options.generations(),
-          null,
-          0);
+      if (options.coEvolution()) {
+        runCoEvolution(
+            config,
+            options.seed(),
+            options.strategy(),
+            options.carnivores(),
+            options.generations(),
+            null,
+            0);
+      } else {
+        run(simulation(config, options.seed(), options.strategy()), options.generations(), null, 0);
+      }
       return;
     }
 
@@ -46,29 +52,45 @@ public final class Main {
       long runId =
           options.replayRunId() != null
               ? replay(store, options.replayRunId(), options)
-              : freshRun(store, options);
+              : freshRun(store, config, options);
       if (options.exportChampionPath() != null) {
-        Genome champion =
-            store
-                .loadOverallChampion(runId)
-                .orElseThrow(
-                    () -> new IllegalStateException("run " + runId + " has no agents to export"));
-        new GenomeCodec(mapper).write(champion, Path.of(options.exportChampionPath()));
-        log.info("exported champion of run {} to {}", runId, options.exportChampionPath());
+        exportChampions(store, runId, options, mapper);
       }
     }
   }
 
-  private static long freshRun(RunStore store, RunOptions options) {
-    WorldConfig config = WorldConfig.defaults();
+  private static long freshRun(RunStore store, WorldConfig config, RunOptions options) {
     long runId =
-        store.startRun(options.seed(), config, options.generations(), System.currentTimeMillis());
-    log.info("seed={} generations={} run={}", options.seed(), options.generations(), runId);
-    run(
-        simulation(config, options.seed(), options.strategy()),
+        store.startRun(
+            new RunSpec(
+                options.seed(),
+                config,
+                options.generations(),
+                options.carnivores(),
+                System.currentTimeMillis()));
+    log.info(
+        "seed={} generations={} strategy={} carnivores={} run={}",
+        options.seed(),
         options.generations(),
-        store,
+        options.strategy().flag(),
+        options.carnivores(),
         runId);
+    if (options.coEvolution()) {
+      runCoEvolution(
+          config,
+          options.seed(),
+          options.strategy(),
+          options.carnivores(),
+          options.generations(),
+          store,
+          runId);
+    } else {
+      run(
+          simulation(config, options.seed(), options.strategy()),
+          options.generations(),
+          store,
+          runId);
+    }
     return runId;
   }
 
@@ -77,19 +99,51 @@ public final class Main {
         store
             .loadRun(originalId)
             .orElseThrow(() -> new IllegalArgumentException("no run with id " + originalId));
-    List<GenerationStats> originalStats = store.loadGenerations(originalId);
     long runId =
         store.startRun(
-            original.seed(), original.config(), original.generations(), System.currentTimeMillis());
+            new RunSpec(
+                original.seed(),
+                original.config(),
+                original.generations(),
+                original.carnivores(),
+                System.currentTimeMillis()));
     log.info("replaying run {} from seed={} as run {}", originalId, original.seed(), runId);
-    List<GenerationStats> replayStats =
-        run(
-            simulation(original.config(), original.seed(), options.strategy()),
-            original.generations(),
-            store,
-            runId);
-    log.info("replay identical to run {}: {}", originalId, replayStats.equals(originalStats));
+    if (original.carnivores() > 0) {
+      runCoEvolution(
+          original.config(),
+          original.seed(),
+          options.strategy(),
+          original.carnivores(),
+          original.generations(),
+          store,
+          runId);
+      log.info(
+          "replay identical to run {}: {}",
+          originalId,
+          teamHistoriesMatch(store, originalId, runId));
+    } else {
+      run(
+          simulation(original.config(), original.seed(), options.strategy()),
+          original.generations(),
+          store,
+          runId);
+      log.info(
+          "replay identical to run {}: {}",
+          originalId,
+          store
+              .loadGenerations(originalId, Team.HERBIVORE)
+              .equals(store.loadGenerations(runId, Team.HERBIVORE)));
+    }
     return runId;
+  }
+
+  private static boolean teamHistoriesMatch(RunStore store, long originalId, long runId) {
+    for (Team team : Team.values()) {
+      if (!store.loadGenerations(originalId, team).equals(store.loadGenerations(runId, team))) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private static List<GenerationStats> run(
@@ -99,7 +153,7 @@ public final class Main {
       GenerationResult result = simulation.runGeneration();
       GenerationStats stats = result.stats();
       if (store != null) {
-        store.recordGeneration(runId, stats, result.population());
+        store.recordGeneration(runId, Team.HERBIVORE, stats, result.population());
       }
       log.info(
           "gen={} best={} mean={} median={} diversity={} pop={}",
@@ -114,33 +168,76 @@ public final class Main {
     return history;
   }
 
-  private static void runCoEvolution(WorldConfig config, RunOptions options) {
-    RandomGenerator rng = RandomGeneratorFactory.of("L64X128MixRandom").create(options.seed());
+  private static void runCoEvolution(
+      WorldConfig config,
+      long seed,
+      Strategy strategy,
+      int carnivores,
+      int generations,
+      RunStore store,
+      long runId) {
+    RandomGenerator rng = RandomGeneratorFactory.of("L64X128MixRandom").create(seed);
     CoEvolution coEvolution =
         new CoEvolution(
             config,
             rng,
-            options.strategy().create(rng),
-            options.strategy().create(rng),
+            strategy.create(rng),
+            strategy.create(rng),
             config.population(),
-            options.carnivores());
-    log.info(
-        "seed={} generations={} strategy={} herbivores={} carnivores={}",
-        options.seed(),
-        options.generations(),
-        options.strategy().flag(),
-        config.population(),
-        options.carnivores());
-    for (int g = 0; g < options.generations(); g++) {
+            carnivores);
+    for (int g = 0; g < generations; g++) {
       CoEvolutionResult result = coEvolution.runGeneration();
+      if (store != null) {
+        store.recordGeneration(
+            runId, Team.HERBIVORE, result.herbivores().stats(), result.herbivores().population());
+        store.recordGeneration(
+            runId, Team.CARNIVORE, result.carnivores().stats(), result.carnivores().population());
+      }
+      GenerationStats herbivoreStats = result.herbivores().stats();
+      GenerationStats carnivoreStats = result.carnivores().stats();
       log.info(
           "gen={} herbivore[best={} mean={}] carnivore[best={} mean={}]",
-          result.herbivores().generation(),
-          String.format(Locale.ROOT, "%.2f", result.herbivores().bestFitness()),
-          String.format(Locale.ROOT, "%.2f", result.herbivores().meanFitness()),
-          String.format(Locale.ROOT, "%.2f", result.carnivores().bestFitness()),
-          String.format(Locale.ROOT, "%.2f", result.carnivores().meanFitness()));
+          herbivoreStats.generation(),
+          String.format(Locale.ROOT, "%.2f", herbivoreStats.bestFitness()),
+          String.format(Locale.ROOT, "%.2f", herbivoreStats.meanFitness()),
+          String.format(Locale.ROOT, "%.2f", carnivoreStats.bestFitness()),
+          String.format(Locale.ROOT, "%.2f", carnivoreStats.meanFitness()));
     }
+  }
+
+  private static void exportChampions(
+      RunStore store, long runId, RunOptions options, ObjectMapper mapper) {
+    GenomeCodec codec = new GenomeCodec(mapper);
+    if (options.coEvolution()) {
+      for (Team team : Team.values()) {
+        Genome champion =
+            store
+                .loadChampion(runId, team)
+                .orElseThrow(
+                    () ->
+                        new IllegalStateException(
+                            "run " + runId + " has no " + team + " agents to export"));
+        Path out = teamPath(options.exportChampionPath(), team);
+        codec.write(champion, out);
+        log.info("exported {} champion of run {} to {}", team, runId, out);
+      }
+    } else {
+      Genome champion =
+          store
+              .loadOverallChampion(runId)
+              .orElseThrow(
+                  () -> new IllegalStateException("run " + runId + " has no agents to export"));
+      codec.write(champion, Path.of(options.exportChampionPath()));
+      log.info("exported champion of run {} to {}", runId, options.exportChampionPath());
+    }
+  }
+
+  private static Path teamPath(String base, Team team) {
+    String suffix = team.name().toLowerCase(Locale.ROOT);
+    int dot = base.lastIndexOf('.');
+    return dot < 0
+        ? Path.of(base + "." + suffix)
+        : Path.of(base.substring(0, dot) + "." + suffix + base.substring(dot));
   }
 
   private static Simulation simulation(WorldConfig config, long seed, Strategy strategy) {
