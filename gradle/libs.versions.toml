@@ -16,6 +16,8 @@ javalin = { module = "io.javalin:javalin", version.ref = "javalin" }
 gdx-core = { module = "com.badlogicgames.gdx:gdx", version.ref = "gdx" }
 gdx-backend-lwjgl3 = { module = "com.badlogicgames.gdx:gdx-backend-lwjgl3", version.ref = "gdx" }
 gdx-platform = { module = "com.badlogicgames.gdx:gdx-platform", version.ref = "gdx" }
+gdx-freetype = { module = "com.badlogicgames.gdx:gdx-freetype", version.ref = "gdx" }
+gdx-freetype-platform = { module = "com.badlogicgames.gdx:gdx-freetype-platform", version.ref = "gdx" }
 java-websocket = { module = "org.java-websocket:Java-WebSocket", version.ref = "javaWebsocket" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }

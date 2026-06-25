@@ -38,6 +38,10 @@ final class ControlInput {
     return paused;
   }
 
+  double speed() {
+    return speed;
+  }
+
   private Optional<ClientMessage> scale(double factor) {
     double next = Math.clamp(speed * factor, MIN_SPEED, MAX_SPEED);
     if (next == speed) {

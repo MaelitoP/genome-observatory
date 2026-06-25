@@ -2,133 +2,113 @@ package dev.maelitop.evolution.client;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input.Keys;
-import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.graphics.Color;
-import com.badlogic.gdx.graphics.g2d.BitmapFont;
-import com.badlogic.gdx.graphics.g2d.SpriteBatch;
-import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
-import com.badlogic.gdx.utils.ScreenUtils;
+import dev.maelitop.evolution.client.render.Draw;
+import dev.maelitop.evolution.client.render.Theme;
+import dev.maelitop.evolution.client.view.FitnessChart;
+import dev.maelitop.evolution.client.view.HintBar;
+import dev.maelitop.evolution.client.view.HudBar;
+import dev.maelitop.evolution.client.view.NetworkRenderer;
 import dev.maelitop.evolution.protocol.Team;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.function.ToDoubleFunction;
 
-final class AnalyticsScreen implements Screen {
+final class AnalyticsScreen extends ObservatoryScreen {
 
-  private static final float ROW_HEIGHT = 22f;
-  private static final float NODE_RADIUS = 6f;
-  private static final Color[] PALETTE = {
-    Color.CYAN, Color.LIME, Color.GOLD, Color.MAGENTA, Color.ORANGE, Color.SCARLET
-  };
+  private static final float ROW_H = 64f;
 
-  private final RunApiClient api;
-  private final EvolutionClient game;
-  private final ShapeRenderer shapes = new ShapeRenderer();
-  private final SpriteBatch batch = new SpriteBatch();
-  private final BitmapFont font = new BitmapFont();
-  private final StartRunForm form = new StartRunForm();
-  private final Set<Long> compared = new LinkedHashSet<>();
+  private final RunBrowser runs;
+  private final FitnessChart chart = new FitnessChart();
+  private final NetworkRenderer net = new NetworkRenderer();
+  private final float[] best = new float[4096];
+  private final float[] mean = new float[4096];
+  private final float[] div = new float[4096];
+  private float sincePoll;
 
-  private int selected;
-  private Team team = Team.HERBIVORE;
-  private long loadedRun = -1;
-  private Team loadedTeam;
-
-  AnalyticsScreen(RunApiClient api, EvolutionClient game) {
-    this.api = api;
-    this.game = game;
+  AnalyticsScreen(EvolutionClient app, RunBrowser runs) {
+    super(app);
+    this.runs = runs;
   }
 
   @Override
   public void show() {
-    Gdx.input.setInputProcessor(null);
-    loadedRun = -1;
-    var _ = api.refreshRuns();
+    super.show();
+    runs.refresh();
   }
 
   @Override
-  public void render(float delta) {
-    if (Gdx.input.isKeyJustPressed(Keys.TAB)) {
-      game.showWorld();
-      return;
-    }
-    handleInput();
-    syncSelection();
-
-    float w = Gdx.graphics.getWidth();
-    float h = Gdx.graphics.getHeight();
-    float listX = 10f;
-    float listW = 230f;
-    float rightX = listX + listW + 20f;
-    float rightW = w - rightX - 20f;
-    float chartH = h * 0.40f;
-    float chartY = h * 0.52f;
-    float topoH = h * 0.44f;
-    float topoY = 20f;
-
-    ScreenUtils.clear(0.07f, 0.07f, 0.09f, 1);
-    shapes.getProjectionMatrix().setToOrtho2D(0, 0, w, h);
-    batch.getProjectionMatrix().setToOrtho2D(0, 0, w, h);
-
-    shapes.begin(ShapeRenderer.ShapeType.Line);
-    border(listX, topoY, listW, h - topoY - 30f);
-    border(rightX, chartY, rightW, chartH);
-    border(rightX, topoY, rightW, topoH);
-    drawChartLines(rightX, chartY, rightW, chartH);
-    drawTopologyEdges(rightX, topoY, rightW, topoH);
-    shapes.end();
-
-    shapes.begin(ShapeRenderer.ShapeType.Filled);
-    highlightSelected(listX, listW, h);
-    drawTopologyNodes(rightX, topoY, rightW, topoH);
-    shapes.end();
-
-    batch.begin();
-    drawText(listX, rightX, chartY, chartH, w, h);
-    batch.end();
+  protected boolean modalOpen() {
+    return runs.form().open();
   }
 
-  private void handleInput() {
-    if (form.open()) {
-      handleFormInput();
+  @Override
+  protected void input(float delta) {
+    if (runs.form().open()) {
+      formInput();
       return;
     }
-    List<RunSummary> runs = api.runs();
     if (Gdx.input.isKeyJustPressed(Keys.UP)) {
-      selected--;
+      runs.selectPrev();
     }
     if (Gdx.input.isKeyJustPressed(Keys.DOWN)) {
-      selected++;
+      runs.selectNext();
     }
     if (Gdx.input.isKeyJustPressed(Keys.T)) {
-      team = team == Team.HERBIVORE ? Team.CARNIVORE : Team.HERBIVORE;
-      loadedTeam = null;
+      runs.toggleTeam();
     }
-    if (Gdx.input.isKeyJustPressed(Keys.C) && !runs.isEmpty()) {
-      long id = runs.get(clamp(selected, runs.size())).id();
-      if (!compared.remove(id)) {
-        compared.add(id);
-        var _ = api.loadGenerations(id);
-      }
-    }
-    if (Gdx.input.isKeyJustPressed(Keys.R)) {
-      loadedRun = -1;
-      var _ = api.refreshRuns();
-    }
-    if (Gdx.input.isKeyJustPressed(Keys.E)) {
-      api.exportChampion(Path.of("champion-" + currentRunId() + "-" + team + ".json"));
+    if (Gdx.input.isKeyJustPressed(Keys.C)) {
+      runs.toggleCompareSelected();
     }
     if (Gdx.input.isKeyJustPressed(Keys.N)) {
-      form.toggle();
+      runs.form().toggle();
+    }
+    if (Gdx.input.isKeyJustPressed(Keys.E)) {
+      runs.exportChampion();
+    }
+    if (Gdx.input.isKeyJustPressed(Keys.R)) {
+      runs.refresh();
+    }
+    if (Gdx.input.justTouched()) {
+      handleClick(Gdx.input.getX(), height - Gdx.input.getY());
     }
   }
 
-  private void handleFormInput() {
+  private void handleClick(float mx, float my) {
+    if (hits(newButtonRect(), mx, my)) {
+      runs.form().toggle();
+      return;
+    }
+    if (hits(exportButtonRect(), mx, my)) {
+      runs.exportChampion();
+      return;
+    }
+    if (mx >= 0 && mx <= Theme.RUNLIST_W) {
+      float listTop = bodyY + bodyH - Theme.PANEL_PAD - 30f;
+      int idx = (int) ((listTop - my) / ROW_H);
+      if (idx >= 0 && idx < runs.runs().size()) {
+        runs.select(idx);
+      }
+    }
+  }
+
+  private static boolean hits(float[] r, float mx, float my) {
+    return mx >= r[0] && mx <= r[0] + r[2] && my >= r[1] && my <= r[1] + r[3];
+  }
+
+  private float[] newButtonRect() {
+    float pad = Theme.PANEL_PAD;
+    float bw = rc.fonts.width(rc.fonts.sansButton, "+ new") + 20f;
+    float top = bodyY + bodyH - pad;
+    return new float[] {Theme.RUNLIST_W - pad - bw, top - 15f, bw, 20f};
+  }
+
+  private float[] exportButtonRect() {
+    float pad = Theme.PANEL_PAD;
+    float champX = bodyW - Theme.CHAMPION_W;
+    return new float[] {champX + pad, bodyY + pad, Theme.CHAMPION_W - pad * 2, 30f};
+  }
+
+  private void formInput() {
+    StartRunForm form = runs.form();
     if (Gdx.input.isKeyJustPressed(Keys.UP)) {
       form.prevField();
     }
@@ -144,275 +124,354 @@ final class AnalyticsScreen implements Screen {
       form.backspace();
     }
     if (Gdx.input.isKeyJustPressed(Keys.ENTER)) {
-      api.startRun(form.seed(), form.generations(), form.carnivores());
-      form.close();
+      runs.startRun();
     }
     if (Gdx.input.isKeyJustPressed(Keys.ESCAPE)) {
       form.close();
     }
   }
 
-  private void syncSelection() {
-    List<RunSummary> runs = api.runs();
-    if (runs.isEmpty()) {
-      return;
+  @Override
+  protected void drawBody(float delta) {
+    runs.sync();
+    sincePoll += delta;
+    if (sincePoll >= 1.5f) {
+      sincePoll = 0f;
+      runs.poll();
     }
-    selected = clamp(selected, runs.size());
-    long id = runs.get(selected).id();
-    if (id != loadedRun || team != loadedTeam) {
-      loadedRun = id;
-      loadedTeam = team;
-      var _ = api.loadGenerations(id);
-      var _ = api.loadChampion(id, team);
+    float listW = Theme.RUNLIST_W;
+    float champW = Theme.CHAMPION_W;
+    float chartX = listW;
+    float chartW = bodyW - listW - champW;
+
+    drawRunList(0, bodyY, listW, bodyH);
+    if (runs.runs().isEmpty()) {
+      drawEmpty(chartX, bodyY, chartW, bodyH);
+    } else {
+      drawChart(chartX, bodyY, chartW, bodyH);
+    }
+    drawChampion(bodyW - champW, bodyY, champW, bodyH);
+
+    if (runs.form().open()) {
+      NewRunModal.draw(rc, width, height, runs.form());
     }
   }
 
-  private void border(float x, float y, float w, float h) {
-    shapes.setColor(0.3f, 0.3f, 0.35f, 1);
-    shapes.rect(x, y, w, h);
+  @Override
+  protected void drawChrome() {
+    HudBar.draw(rc, width, height, "analytics", List.of(), null);
+    HintBar.draw(
+        rc,
+        width,
+        List.of(
+            new HintBar.Hint("N", "new run"),
+            new HintBar.Hint("T", "team"),
+            new HintBar.Hint("E", "export"),
+            new HintBar.Hint("R", "refresh")),
+        new HintBar.Hint("TAB", "network"));
   }
 
-  private void highlightSelected(float listX, float listW, float h) {
-    List<RunSummary> runs = api.runs();
-    if (runs.isEmpty()) {
-      return;
+  private void drawRunList(float x, float y, float w, float h) {
+    Draw d = rc.draw;
+    d.rect(x, y, w, h, Theme.PANEL);
+    d.line(x + w, y, x + w, y + h, Theme.HAIRLINE);
+    float pad = Theme.PANEL_PAD;
+    float top = y + h - pad;
+
+    d.tracked(rc.fonts.mono10, "RUNS", x + pad, top - 2f, 1.4f, Theme.TEXT_MUTED);
+    float[] b = newButtonRect();
+    d.button(b[0], b[1], b[2], b[3], "+ new", rc.fonts.sansButton, Theme.ACCENT, null, Theme.FIELD);
+
+    List<RunSummary> list = runs.runs();
+    float rowTop = top - 30f;
+    for (int i = 0; i < list.size(); i++) {
+      drawRunRow(d, list.get(i), x, rowTop - i * ROW_H, w, i == runs.selectedIndex());
     }
-    float y = h - 60f - selected * ROW_HEIGHT;
-    shapes.setColor(0.18f, 0.22f, 0.30f, 1);
-    shapes.rect(listX + 2, y - 4, listW - 4, ROW_HEIGHT);
+
+    float fy = y + 12f;
+    float fx = x + pad;
+    fx += d.keyCap(fx, fy, "↑↓") + 6f;
+    d.textMid(rc.fonts.mono11, "select", fx, fy + 9f, Theme.TEXT_MUTED);
+    fx += rc.fonts.width(rc.fonts.mono11, "select") + 16f;
+    fx += d.keyCap(fx, fy, "C") + 6f;
+    d.textMid(rc.fonts.mono11, "compare", fx, fy + 9f, Theme.TEXT_MUTED);
   }
 
-  private void drawChartLines(float x, float y, float w, float h) {
-    if (!compared.isEmpty()) {
-      drawComparison(x, y, w, h);
-      return;
+  private void drawRunRow(
+      Draw d, RunSummary run, float x, float rowTop, float w, boolean selected) {
+    float pad = Theme.PANEL_PAD;
+    float rowY = rowTop - ROW_H;
+    boolean compared = runs.compared().contains(run.id());
+    if (selected) {
+      d.roundedRect(x + 6, rowY + 4, w - 12, ROW_H - 8, 5f, Theme.SELECT_TINT);
+      d.strokeRoundedRect(x + 6, rowY + 4, w - 12, ROW_H - 8, 5f, Theme.ACCENT, 0.8f);
     }
-    List<GenerationRecordView.Stats> points = teamPoints(currentRunId());
-    if (points.size() < 2) {
-      return;
+    if (compared) {
+      d.roundedRect(x + 6, rowY + 4, 2.5f, ROW_H - 8, 1f, Theme.DIVERSITY);
     }
-    double[] best = column(points, GenerationRecordView.Stats::bestFitness);
-    double[] mean = column(points, GenerationRecordView.Stats::meanFitness);
-    double[] diversity = column(points, GenerationRecordView.Stats::diversity);
-    double max = Math.max(maxOf(best), maxOf(mean));
-    polyline(best, x, y, w, h, 0, max, Color.LIME);
-    polyline(mean, x, y, w, h, 0, max, Color.GOLD);
-    polyline(diversity, x, y, w, h, 0, maxOf(diversity), Color.SKY);
-  }
+    float line1 = rowTop - 26f;
+    float line2 = rowTop - 46f;
+    d.textMid(rc.fonts.mono14, runLabel(run), x + pad, line1, Theme.TEXT_PRIMARY);
 
-  private void drawComparison(float x, float y, float w, float h) {
-    double max = 0;
-    for (long id : compared) {
-      for (GenerationRecordView.Stats s : teamPoints(id)) {
-        max = Math.max(max, s.bestFitness());
+    float rightX = x + w - pad;
+    if (run.carnivores() > 0) {
+      String badge = "CO-EVO";
+      float bw = rc.fonts.width(rc.fonts.mono10, badge) + 14f;
+      d.strokeRoundedRect(rightX - bw, line1 - 8f, bw, 17f, 4f, Theme.CARNIVORE, 0.8f);
+      d.textMid(rc.fonts.mono10, badge, rightX - bw + 7f, line1, Theme.CARNIVORE);
+    } else if (compared) {
+      d.textMidRight(rc.fonts.mono11, "compare", rightX, line1, Theme.DIVERSITY);
+    } else {
+      d.textMidRight(rc.fonts.mono11, "herb-only", rightX, line1, Theme.TEXT_FAINT_3);
+    }
+
+    switch (run.status()) {
+      case RUNNING -> {
+        float dotX = x + pad + 4f;
+        float pulse = 2.6f + 1.2f * (float) Math.sin(rc.time() * 4f);
+        d.glowDisc(dotX, line2, pulse, Theme.STATUS_RUNNING, 1f);
+        d.circle(dotX, line2, 2.4f, Theme.STATUS_RUNNING);
+        d.textMid(
+            rc.fonts.mono11,
+            "gen " + run.currentGeneration() + "/" + run.generations(),
+            dotX + 10f,
+            line2,
+            Theme.STATUS_RUNNING);
+        float frac =
+            run.generations() <= 0
+                ? 0f
+                : Math.max(0f, Math.min(1f, run.currentGeneration() / (float) run.generations()));
+        float barX = x + pad;
+        float barW = w - pad * 2 - 12f;
+        float barY = rowY + 7f;
+        d.roundedRect(barX, barY, barW, 3f, 1.5f, Theme.PANEL_ALT);
+        if (frac > 0) {
+          d.roundedRect(barX, barY, Math.max(frac * barW, 3f), 3f, 1.5f, Theme.STATUS_RUNNING);
+        }
       }
-    }
-    if (max <= 0) {
-      return;
-    }
-    int color = 0;
-    for (long id : compared) {
-      List<GenerationRecordView.Stats> points = teamPoints(id);
-      if (points.size() >= 2) {
-        double[] best = column(points, GenerationRecordView.Stats::bestFitness);
-        polyline(best, x, y, w, h, 0, max, PALETTE[color % PALETTE.length]);
+      case QUEUED -> {
+        int ahead = runs.aheadOf(run);
+        d.textMid(
+            rc.fonts.mono11,
+            ahead > 0 ? "queued · " + ahead + " ahead" : "queued",
+            x + pad,
+            line2,
+            Theme.PAUSED);
       }
-      color++;
+      case INTERRUPTED ->
+          d.textMid(
+              rc.fonts.mono11,
+              "interrupted · gen " + run.currentGeneration() + "/" + run.generations(),
+              x + pad,
+              line2,
+              Theme.TEXT_FAINT_3);
+      case COMPLETED ->
+          d.textMid(
+              rc.fonts.mono11,
+              run.generations() + " gen · seed " + seed(run.seed()),
+              x + pad,
+              line2,
+              Theme.TEXT_FAINT);
     }
   }
 
-  private void polyline(
-      double[] values, float x, float y, float w, float h, double min, double max, Color color) {
-    shapes.setColor(color);
-    double span = max - min;
-    if (span <= 0) {
-      span = 1;
+  private String subStatus(RunSummary run) {
+    if (run == null) {
+      return "";
     }
-    float stepX = w / (values.length - 1);
-    for (int i = 0; i < values.length - 1; i++) {
-      float y0 = y + (float) ((values[i] - min) / span) * h;
-      float y1 = y + (float) ((values[i + 1] - min) / span) * h;
-      shapes.line(x + i * stepX, y0, x + (i + 1) * stepX, y1);
-    }
-  }
-
-  private void drawTopologyEdges(float x, float y, float w, float h) {
-    api.champion()
-        .ifPresent(
-            genome -> {
-              Map<Integer, float[]> positions = layout(genome, x, y, w, h);
-              for (GenomeView.ConnectionView c : genome.connections()) {
-                if (!c.enabled()) {
-                  continue;
-                }
-                float[] from = positions.get(c.in());
-                float[] to = positions.get(c.out());
-                if (from == null || to == null) {
-                  continue;
-                }
-                float magnitude = (float) Math.min(1, Math.abs(c.weight()));
-                if (c.weight() >= 0) {
-                  shapes.setColor(0.2f, 0.9f, 0.4f, 0.2f + 0.8f * magnitude);
-                } else {
-                  shapes.setColor(0.9f, 0.3f, 0.3f, 0.2f + 0.8f * magnitude);
-                }
-                shapes.line(from[0], from[1], to[0], to[1]);
-              }
-            });
-  }
-
-  private void drawTopologyNodes(float x, float y, float w, float h) {
-    api.champion()
-        .ifPresent(
-            genome -> {
-              Map<Integer, float[]> positions = layout(genome, x, y, w, h);
-              for (GenomeView.NodeView node : genome.nodes()) {
-                float[] p = positions.get(node.id());
-                if (p == null) {
-                  continue;
-                }
-                shapes.setColor(nodeColor(node.type()));
-                shapes.circle(p[0], p[1], NODE_RADIUS);
-              }
-            });
-  }
-
-  private static Color nodeColor(String type) {
-    return switch (type) {
-      case "INPUT" -> Color.SKY;
-      case "BIAS" -> Color.GRAY;
-      case "OUTPUT" -> Color.ORANGE;
-      default -> Color.WHITE;
+    int cur = run.currentGeneration();
+    int target = run.generations();
+    return switch (run.status()) {
+      case RUNNING -> "computing · gen " + cur + "/" + target;
+      case QUEUED -> {
+        int ahead = runs.aheadOf(run);
+        yield ahead > 0 ? "queued · " + ahead + " ahead" : "queued";
+      }
+      case COMPLETED -> "run complete · " + target + " generations";
+      case INTERRUPTED -> "interrupted · gen " + cur + "/" + target;
     };
   }
 
-  private static Map<Integer, float[]> layout(
-      GenomeView genome, float x, float y, float w, float h) {
-    List<Integer> left = new ArrayList<>();
-    List<Integer> middle = new ArrayList<>();
-    List<Integer> right = new ArrayList<>();
-    for (GenomeView.NodeView node : genome.nodes()) {
-      switch (node.type()) {
-        case "INPUT", "BIAS" -> left.add(node.id());
-        case "OUTPUT" -> right.add(node.id());
-        default -> middle.add(node.id());
-      }
+  private void drawChart(float x, float y, float w, float h) {
+    Draw d = rc.draw;
+    float pad = Theme.PANEL_PAD;
+    long runId = runs.selectedRunId();
+    RunSummary run = runs.selectedRun().orElse(null);
+    List<GenerationRecordView.Stats> pts = runs.teamPoints(runId);
+
+    d.text(
+        rc.fonts.sansTitle, "Fitness — " + runLabel(run), x + pad, y + h - pad, Theme.TEXT_PRIMARY);
+    d.text(rc.fonts.mono11, subStatus(run), x + pad, y + h - pad - 20f, Theme.TEXT_MUTED);
+
+    drawTeamToggle(x + w - pad, y + h - pad - 6f);
+
+    chart.legend(
+        rc,
+        x + pad,
+        y + h - pad - 44f,
+        new String[] {"best", "mean", "diversity"},
+        new Color[] {Theme.BEST, Theme.MEAN, Theme.DIVERSITY});
+
+    if (pts.size() < 2) {
+      d.textCentered(rc.fonts.mono12, "no data yet", x + w / 2f, y + h / 2f, Theme.TEXT_FAINT);
+      return;
     }
-    Map<Integer, float[]> positions = new HashMap<>();
-    place(left, x + 30f, y, h, positions);
-    place(middle, x + w / 2f, y, h, positions);
-    place(right, x + w - 30f, y, h, positions);
-    return positions;
-  }
-
-  private static void place(
-      List<Integer> ids, float columnX, float y, float h, Map<Integer, float[]> out) {
-    for (int i = 0; i < ids.size(); i++) {
-      float ny = y + h - (i + 1) * (h / (ids.size() + 1));
-      out.put(ids.get(i), new float[] {columnX, ny});
+    int n = pts.size();
+    float fitMax = 1e-6f;
+    float divMax = 1e-6f;
+    for (int i = 0; i < n; i++) {
+      best[i] = (float) pts.get(i).bestFitness();
+      mean[i] = (float) pts.get(i).meanFitness();
+      div[i] = (float) pts.get(i).diversity();
+      fitMax = Math.max(fitMax, Math.max(best[i], mean[i]));
+      divMax = Math.max(divMax, div[i]);
     }
-  }
-
-  private void drawText(float listX, float rightX, float chartY, float chartH, float w, float h) {
-    font.setColor(Color.WHITE);
-    font.draw(batch, "RUNS", listX + 6, h - 36f);
-    List<RunSummary> runs = api.runs();
-    if (runs.isEmpty()) {
-      font.draw(batch, "no runs yet — press [N]", listX + 6, h - 60f);
+    fitMax *= 1.08f;
+    divMax *= 1.08f;
+    for (int i = 0; i < n; i++) {
+      best[i] /= fitMax;
+      mean[i] /= fitMax;
+      div[i] /= divMax;
     }
-    for (int i = 0; i < runs.size(); i++) {
-      RunSummary run = runs.get(i);
-      String mark = compared.contains(run.id()) ? "* " : "  ";
-      String label =
-          mark + "#" + run.id() + "  g" + run.generations() + (run.carnivores() > 0 ? "  co" : "");
-      font.setColor(i == selected ? Color.WHITE : Color.LIGHT_GRAY);
-      font.draw(batch, label, listX + 6, h - 60f - i * ROW_HEIGHT + 14f);
+    FitnessChart.Plot p = chart.frame(rc, x + pad, y + pad, w - pad * 2, h - pad * 2 - 64f, n, 1f);
+    chart.series(rc, p, div, n, Theme.DIVERSITY, false, 1.6f);
+    chart.series(rc, p, mean, n, Theme.MEAN, false, 1.6f);
+    chart.series(rc, p, best, n, Theme.BEST, true, 2.2f);
+    chart.frontier(
+        rc,
+        p,
+        n - 1,
+        new float[][] {{best[n - 1]}, {mean[n - 1]}, {div[n - 1]}},
+        new Color[] {Theme.BEST, Theme.MEAN, Theme.DIVERSITY});
+  }
+
+  private void drawTeamToggle(float rightX, float midY) {
+    Draw d = rc.draw;
+    String herb = "Herbivore";
+    String carn = "Carnivore";
+    float h = 22f;
+    float segH = rc.fonts.width(rc.fonts.sansButton, herb) + 20f;
+    float segC = rc.fonts.width(rc.fonts.sansButton, carn) + 20f;
+    float total = segH + segC;
+    float x = rightX - total;
+    float y0 = midY - h / 2f;
+    boolean herbActive = runs.team() == Team.HERBIVORE;
+    d.roundedRect(x, y0, total, h, 6f, Theme.PANEL_ALT);
+    d.strokeRoundedRect(x, y0, total, h, 6f, Theme.BORDER_MUTED);
+    if (herbActive) {
+      d.roundedRect(x + 2f, y0 + 2f, segH - 2f, h - 4f, 5f, Theme.HERBIVORE);
+    } else {
+      d.roundedRect(x + segH, y0 + 2f, segC - 2f, h - 4f, 5f, Theme.CARNIVORE);
+    }
+    d.textMid(
+        rc.fonts.sansButton, herb, x + 10f, midY, herbActive ? Theme.FIELD : Theme.TEXT_MUTED);
+    d.textMid(
+        rc.fonts.sansButton,
+        carn,
+        x + segH + 10f,
+        midY,
+        herbActive ? Theme.TEXT_MUTED : Theme.FIELD);
+  }
+
+  private void drawChampion(float x, float y, float w, float h) {
+    Draw d = rc.draw;
+    d.rect(x, y, w, h, Theme.PANEL);
+    d.line(x, y, x, y + h, Theme.HAIRLINE);
+    float pad = Theme.PANEL_PAD;
+    float top = y + h - pad;
+    d.tracked(rc.fonts.mono10, "CHAMPION BRAIN", x + pad, top - 2f, 1.4f, Theme.TEXT_MUTED);
+
+    Color teamColor = runs.team() == Team.CARNIVORE ? Theme.CARNIVORE : Theme.HERBIVORE;
+    float cursor = top - 26f;
+    List<GenerationRecordView.Stats> pts = runs.teamPoints(runs.selectedRunId());
+    float bestFit = pts.isEmpty() ? 0f : (float) pts.get(pts.size() - 1).bestFitness();
+    GenomeView g = runs.champion().orElse(null);
+
+    cursor =
+        champStat(
+            x + pad,
+            x + w - pad,
+            cursor,
+            "team",
+            runs.team() == Team.CARNIVORE ? "carnivore" : "herbivore",
+            teamColor);
+    cursor =
+        champStat(
+            x + pad,
+            x + w - pad,
+            cursor,
+            "best fitness",
+            String.format("%.3f", bestFit),
+            Theme.BEST);
+    int nodes = g == null ? 0 : g.nodes().size();
+    int conns = g == null ? 0 : g.connections().size();
+    cursor =
+        champStat(x + pad, x + w - pad, cursor, "nodes", String.valueOf(nodes), Theme.TEXT_BODY);
+    cursor =
+        champStat(x + pad, x + w - pad, cursor, "conns", String.valueOf(conns), Theme.TEXT_BODY);
+
+    float btnH = 30f;
+    float netTop = cursor - 8f;
+    float netBottom = y + pad + btnH + 12f;
+    if (g != null) {
+      net.layout(g, x + pad, netBottom, w - pad * 2, netTop - netBottom, false);
+      net.draw(rc, g, 5f, false, true, -1);
+    } else {
+      d.textCentered(
+          rc.fonts.mono11, "no champion", x + w / 2f, (netTop + netBottom) / 2f, Theme.TEXT_FAINT);
     }
 
-    font.setColor(Color.WHITE);
-    String chartTitle =
-        compared.isEmpty()
-            ? "FITNESS — best (green) mean (gold) diversity (blue), team " + team
-            : "COMPARE — best fitness, " + compared.size() + " runs, team " + team;
-    font.draw(batch, chartTitle, rightX + 4, chartY + chartH + 18f);
-    font.draw(batch, "NETWORK — champion topology, team " + team, rightX + 4, h * 0.50f);
+    float[] btn = exportButtonRect();
+    d.button(
+        btn[0],
+        btn[1],
+        btn[2],
+        btn[3],
+        "Export genome",
+        rc.fonts.sansButton,
+        null,
+        Theme.BORDER_MUTED,
+        Theme.TEXT_BODY);
+  }
 
-    font.setColor(Color.LIGHT_GRAY);
-    font.draw(
-        batch,
-        "[Up/Dn] select  [T] team  [C] compare  [N] new run  [E] export  [R] refresh  [TAB] world",
-        listX,
-        16f);
+  private float champStat(float left, float right, float y, String label, String val, Color c) {
+    rc.draw.textMid(rc.fonts.mono11, label, left, y, Theme.TEXT_FAINT);
+    rc.draw.textMidRight(rc.fonts.mono12, val, right, y, c);
+    return y - 20f;
+  }
 
-    if (form.open()) {
-      drawForm(w, h);
+  private void drawEmpty(float x, float y, float w, float h) {
+    Draw d = rc.draw;
+    float cx = x + w / 2f;
+    float cy = y + h / 2f;
+    d.textCentered(rc.fonts.sansTitle, "No runs yet", cx, cy + 40f, Theme.TEXT_PRIMARY);
+    d.textCentered(
+        rc.fonts.mono12,
+        "Launch a co-evolution run to see fitness curves.",
+        cx,
+        cy + 14f,
+        Theme.TEXT_MUTED);
+    float bw = 200f;
+    d.button(
+        cx - bw / 2f,
+        cy - 36f,
+        bw,
+        36f,
+        "Start your first run",
+        rc.fonts.sansButton,
+        Theme.ACCENT,
+        null,
+        Theme.FIELD);
+  }
+
+  private static String runLabel(RunSummary run) {
+    if (run == null) {
+      return "run —";
     }
+    return run.id() < 1000 ? String.format("run %03d", run.id()) : "run " + run.id();
   }
 
-  private void drawForm(float w, float h) {
-    float fx = w / 2f - 160f;
-    float fy = h / 2f + 40f;
-    font.setColor(Color.WHITE);
-    font.draw(batch, "NEW RUN  ([Up/Dn] field, digits, [ENTER] start, [ESC] cancel)", fx, fy + 30f);
-    drawField("seed", StartRunForm.Field.SEED, fx, fy);
-    drawField("generations", StartRunForm.Field.GENERATIONS, fx, fy - 24f);
-    drawField("carnivores", StartRunForm.Field.CARNIVORES, fx, fy - 48f);
-  }
-
-  private void drawField(String label, StartRunForm.Field field, float x, float y) {
-    boolean active = form.field() == field;
-    font.setColor(active ? Color.GOLD : Color.LIGHT_GRAY);
-    font.draw(batch, (active ? "> " : "  ") + label + ": " + form.text(field), x, y);
-  }
-
-  private long currentRunId() {
-    List<RunSummary> runs = api.runs();
-    return runs.isEmpty() ? -1 : runs.get(clamp(selected, runs.size())).id();
-  }
-
-  private List<GenerationRecordView.Stats> teamPoints(long runId) {
-    List<GenerationRecordView.Stats> points = new ArrayList<>();
-    for (GenerationRecordView record : api.generations(runId)) {
-      if (record.team() == team) {
-        points.add(record.stats());
-      }
-    }
-    return points;
-  }
-
-  private static double[] column(
-      List<GenerationRecordView.Stats> points, ToDoubleFunction<GenerationRecordView.Stats> field) {
-    return points.stream().mapToDouble(field).toArray();
-  }
-
-  private static int clamp(int index, int size) {
-    return Math.clamp(index, 0, size - 1);
-  }
-
-  private static double maxOf(double[] values) {
-    double max = 0;
-    for (double v : values) {
-      max = Math.max(max, v);
-    }
-    return max;
-  }
-
-  @Override
-  public void resize(int width, int height) {}
-
-  @Override
-  public void pause() {}
-
-  @Override
-  public void resume() {}
-
-  @Override
-  public void hide() {}
-
-  @Override
-  public void dispose() {
-    shapes.dispose();
-    batch.dispose();
-    font.dispose();
+  private static String seed(long seed) {
+    return seed < 10000 ? String.format("%04d", seed) : String.valueOf(seed);
   }
 }

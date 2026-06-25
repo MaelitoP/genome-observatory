@@ -2,6 +2,7 @@ plugins { `java-library` }
 
 dependencies {
   api(project(":simulation-core"))
+  api(project(":protocol"))
   api(libs.jackson.databind)
   implementation(libs.slf4j.api)
   runtimeOnly(libs.sqlite.jdbc)

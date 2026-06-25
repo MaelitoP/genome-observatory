@@ -7,6 +7,7 @@ import dev.maelitop.evolution.core.domain.WorldConfig;
 import dev.maelitop.evolution.core.evolution.Evaluated;
 import dev.maelitop.evolution.core.evolution.GenerationStats;
 import dev.maelitop.evolution.core.neural.Genome;
+import dev.maelitop.evolution.protocol.RunStatus;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -71,6 +72,51 @@ public final class RunStore implements AutoCloseable {
     }
     ensureColumn("run", "carnivores", "carnivores INTEGER NOT NULL DEFAULT 0");
     ensureColumn("generation", "team", "team TEXT NOT NULL DEFAULT 'HERBIVORE'");
+    ensureColumn("run", "status", "status TEXT NOT NULL DEFAULT 'QUEUED'");
+  }
+
+  /**
+   * Marks runs left QUEUED/RUNNING (by a prior crash, or legacy rows that defaulted to QUEUED when
+   * the status column was added) as COMPLETED if all their generations were recorded, else
+   * INTERRUPTED. The server calls this once at startup before submitting new runs.
+   */
+  public void reconcileInterruptedRuns() {
+    String sql =
+        "UPDATE run SET status = CASE WHEN ("
+            + "SELECT COALESCE(MAX(idx)+1,0) FROM generation"
+            + " WHERE generation.run_id = run.id AND team = 'HERBIVORE') >= generations"
+            + " THEN 'COMPLETED' ELSE 'INTERRUPTED' END"
+            + " WHERE status IN ('QUEUED','RUNNING')";
+    try (Statement statement = connection.createStatement()) {
+      statement.executeUpdate(sql);
+    } catch (SQLException e) {
+      throw new IllegalStateException("failed to reconcile run statuses", e);
+    }
+  }
+
+  public void updateRunStatus(long runId, RunStatus status) {
+    try (PreparedStatement statement =
+        connection.prepareStatement("UPDATE run SET status = ? WHERE id = ?")) {
+      statement.setString(1, status.name());
+      statement.setLong(2, runId);
+      statement.executeUpdate();
+    } catch (SQLException e) {
+      throw new IllegalStateException("failed to update status for run " + runId, e);
+    }
+  }
+
+  /** Highest recorded generation index + 1 for the herbivore team (co-evo records two rows/gen). */
+  public int currentGeneration(long runId) {
+    String sql =
+        "SELECT COALESCE(MAX(idx)+1,0) FROM generation WHERE run_id = ? AND team = 'HERBIVORE'";
+    try (PreparedStatement statement = connection.prepareStatement(sql)) {
+      statement.setLong(1, runId);
+      try (ResultSet rs = statement.executeQuery()) {
+        return rs.next() ? rs.getInt(1) : 0;
+      }
+    } catch (SQLException e) {
+      throw new IllegalStateException("failed to read current generation for run " + runId, e);
+    }
   }
 
   private void ensureColumn(String table, String column, String columnDdl) {
@@ -164,7 +210,8 @@ public final class RunStore implements AutoCloseable {
   }
 
   public Optional<StoredRun> loadRun(long id) {
-    String sql = "SELECT seed, config, generations, carnivores, started_at FROM run WHERE id = ?";
+    String sql =
+        "SELECT seed, config, generations, carnivores, started_at, status FROM run WHERE id = ?";
     try (PreparedStatement statement = connection.prepareStatement(sql)) {
       statement.setLong(1, id);
       try (ResultSet rs = statement.executeQuery()) {
@@ -180,7 +227,7 @@ public final class RunStore implements AutoCloseable {
 
   public List<StoredRun> listRuns() {
     String sql =
-        "SELECT id, seed, config, generations, carnivores, started_at FROM run ORDER BY id";
+        "SELECT id, seed, config, generations, carnivores, started_at, status FROM run ORDER BY id";
     try (PreparedStatement statement = connection.prepareStatement(sql);
         ResultSet rs = statement.executeQuery()) {
       List<StoredRun> runs = new ArrayList<>();
@@ -201,7 +248,8 @@ public final class RunStore implements AutoCloseable {
         config,
         rs.getInt("generations"),
         rs.getInt("carnivores"),
-        rs.getLong("started_at"));
+        rs.getLong("started_at"),
+        RunStatus.fromDb(rs.getString("status")));
   }
 
   public Optional<StoredAgent> loadAgent(long agentId) {

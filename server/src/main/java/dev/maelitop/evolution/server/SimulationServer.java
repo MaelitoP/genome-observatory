@@ -36,6 +36,7 @@ public final class SimulationServer {
   private final TickControl control;
 
   private volatile ScheduledFuture<?> tickHandle;
+  private long lastBroadcastMs;
   private Javalin app;
 
   public SimulationServer(int port, HelloMessage hello, SimulationWorld world, RunService runs) {
@@ -116,13 +117,19 @@ public final class SimulationServer {
   }
 
   private void tick() {
-    if (!control.allow()) {
-      return;
-    }
     try {
-      world.step();
-      String frame = json(world.snapshot());
-      sessions.removeIf(ctx -> !trySend(ctx, frame));
+      boolean stepped = control.allow();
+      if (stepped) {
+        world.step();
+      }
+      // Broadcast every step, and at least every 500ms while paused, so the socket never goes
+      // idle long enough for the server or client to time it out and drop control messages.
+      long now = System.currentTimeMillis();
+      if (stepped || now - lastBroadcastMs >= 500) {
+        lastBroadcastMs = now;
+        String frame = json(world.snapshot());
+        sessions.removeIf(ctx -> !trySend(ctx, frame));
+      }
     } catch (RuntimeException e) {
       log.error("simulation tick failed", e);
     }

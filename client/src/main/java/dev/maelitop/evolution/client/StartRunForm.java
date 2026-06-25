@@ -8,6 +8,8 @@ final class StartRunForm {
     CARNIVORES
   }
 
+  static final int MAX_GENERATIONS = 1000;
+  static final int MAX_CARNIVORES = 100;
   private static final int MAX_DIGITS = 12;
 
   private boolean open;
@@ -73,11 +75,11 @@ final class StartRunForm {
   }
 
   int generations() {
-    return Math.max(1, (int) parse(generations, 1));
+    return (int) Math.clamp(parse(generations, 1), 1, MAX_GENERATIONS);
   }
 
   int carnivores() {
-    return Math.max(0, (int) parse(carnivores, 0));
+    return (int) Math.clamp(parse(carnivores, 0), 0, MAX_CARNIVORES);
   }
 
   private StringBuilder buffer(Field f) {

@@ -72,6 +72,21 @@ class RestApiTest {
   }
 
   @Test
+  void reportsStatusAndProgress() throws Exception {
+    JsonNode created = post("/runs", "{\"seed\":7,\"generations\":2}", 201);
+    assertThat(created.has("status")).isTrue();
+    assertThat(created.has("currentGeneration")).isTrue();
+
+    awaitCondition(
+        () -> {
+          JsonNode run = get("/runs").get(0);
+          return "COMPLETED".equals(run.get("status").asText())
+              && run.get("currentGeneration").asInt() == 2;
+        },
+        Duration.ofSeconds(30));
+  }
+
+  @Test
   void runsAndInspectsCoEvolutionPerTeam() throws Exception {
     JsonNode created = post("/runs", "{\"seed\":3,\"generations\":2,\"carnivores\":3}", 201);
     long runId = created.get("id").asLong();

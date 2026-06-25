@@ -1,6 +1,7 @@
 package dev.maelitop.evolution.client;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.maelitop.evolution.protocol.Team;
 import java.io.IOException;
@@ -26,7 +27,8 @@ final class RunApiClient implements AutoCloseable {
   private static final Logger log = LoggerFactory.getLogger(RunApiClient.class);
 
   private final HttpClient http = HttpClient.newHttpClient();
-  private final ObjectMapper mapper = new ObjectMapper();
+  private final ObjectMapper mapper =
+      new ObjectMapper().configure(DeserializationFeature.READ_UNKNOWN_ENUM_VALUES_AS_NULL, true);
   private final URI base;
 
   private final AtomicReference<List<RunSummary>> runs = new AtomicReference<>(List.of());

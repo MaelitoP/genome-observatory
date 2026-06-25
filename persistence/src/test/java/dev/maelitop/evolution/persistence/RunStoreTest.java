@@ -10,6 +10,7 @@ import dev.maelitop.evolution.core.evolution.Evaluated;
 import dev.maelitop.evolution.core.evolution.GenerationStats;
 import dev.maelitop.evolution.core.neural.Activation;
 import dev.maelitop.evolution.core.neural.Genome;
+import dev.maelitop.evolution.protocol.RunStatus;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -52,7 +53,8 @@ class RunStoreTest {
 
     try (RunStore store = open()) {
       assertThat(store.loadRun(runId))
-          .contains(new StoredRun(runId, 42L, WorldConfig.defaults(), 2, 0, 1000L));
+          .contains(
+              new StoredRun(runId, 42L, WorldConfig.defaults(), 2, 0, 1000L, RunStatus.QUEUED));
       assertThat(store.loadGenerations(runId, Team.HERBIVORE))
           .containsExactly(
               new GenerationStats(0, 5.0, 3.0, 3.0, 0.5, 2),
@@ -122,6 +124,8 @@ class RunStoreTest {
     RandomGenerator rng = RandomGeneratorFactory.of("L64X128MixRandom").create(9L);
     try (RunStore store = new RunStore(url, new ObjectMapper())) {
       assertThat(store.loadRun(1L).orElseThrow().carnivores()).isZero();
+      store.reconcileInterruptedRuns();
+      assertThat(store.loadRun(1L).orElseThrow().status()).isEqualTo(RunStatus.INTERRUPTED);
       store.recordGeneration(
           1L,
           Team.HERBIVORE,
@@ -177,8 +181,8 @@ class RunStoreTest {
 
       assertThat(store.listRuns())
           .containsExactly(
-              new StoredRun(first, 1L, WorldConfig.defaults(), 3, 0, 100L),
-              new StoredRun(second, 2L, WorldConfig.defaults(), 5, 8, 200L));
+              new StoredRun(first, 1L, WorldConfig.defaults(), 3, 0, 100L, RunStatus.QUEUED),
+              new StoredRun(second, 2L, WorldConfig.defaults(), 5, 8, 200L, RunStatus.QUEUED));
     }
   }
 
@@ -212,6 +216,74 @@ class RunStoreTest {
       assertThat(store.loadOverallChampion(99L)).isEmpty();
       assertThat(store.loadAgent(99L)).isEmpty();
       assertThat(store.listRuns()).isEmpty();
+    }
+  }
+
+  @Test
+  void updateRunStatusPersists() {
+    try (RunStore store = open()) {
+      long runId = store.startRun(new RunSpec(1L, WorldConfig.defaults(), 3, 0, 0L));
+      assertThat(store.loadRun(runId).orElseThrow().status()).isEqualTo(RunStatus.QUEUED);
+      store.updateRunStatus(runId, RunStatus.RUNNING);
+      assertThat(store.loadRun(runId).orElseThrow().status()).isEqualTo(RunStatus.RUNNING);
+      store.updateRunStatus(runId, RunStatus.COMPLETED);
+      assertThat(store.loadRun(runId).orElseThrow().status()).isEqualTo(RunStatus.COMPLETED);
+    }
+  }
+
+  @Test
+  void currentGenerationCountsHerbivoreOnly() {
+    RandomGenerator rng = RandomGeneratorFactory.of("L64X128MixRandom").create(6L);
+    try (RunStore store = open()) {
+      long runId = store.startRun(new RunSpec(1L, WorldConfig.defaults(), 5, 4, 0L));
+      for (int g = 0; g < 2; g++) {
+        store.recordGeneration(
+            runId,
+            Team.HERBIVORE,
+            new GenerationStats(g, 1.0, 1.0, 1.0, 0.0, 1),
+            List.of(new Evaluated(Genome.initial(14, OUTPUTS, rng), 1.0)));
+        store.recordGeneration(
+            runId,
+            Team.CARNIVORE,
+            new GenerationStats(g, 1.0, 1.0, 1.0, 0.0, 1),
+            List.of(new Evaluated(Genome.initial(14, OUTPUTS, rng), 1.0)));
+      }
+      assertThat(store.currentGeneration(runId)).isEqualTo(2);
+    }
+  }
+
+  @Test
+  void reconcileMarksCompletedVsInterrupted() {
+    RandomGenerator rng = RandomGeneratorFactory.of("L64X128MixRandom").create(7L);
+    try (RunStore store = open()) {
+      long done = store.startRun(new RunSpec(1L, WorldConfig.defaults(), 2, 0, 0L));
+      for (int g = 0; g < 2; g++) {
+        store.recordGeneration(
+            done,
+            Team.HERBIVORE,
+            new GenerationStats(g, 1.0, 1.0, 1.0, 0.0, 1),
+            List.of(new Evaluated(Genome.initial(14, OUTPUTS, rng), 1.0)));
+      }
+      long partial = store.startRun(new RunSpec(2L, WorldConfig.defaults(), 5, 0, 0L));
+      store.recordGeneration(
+          partial,
+          Team.HERBIVORE,
+          new GenerationStats(0, 1.0, 1.0, 1.0, 0.0, 1),
+          List.of(new Evaluated(Genome.initial(14, OUTPUTS, rng), 1.0)));
+
+      store.reconcileInterruptedRuns();
+
+      assertThat(store.loadRun(done).orElseThrow().status()).isEqualTo(RunStatus.COMPLETED);
+      assertThat(store.loadRun(partial).orElseThrow().status()).isEqualTo(RunStatus.INTERRUPTED);
+    }
+  }
+
+  @Test
+  void reconcileMarksZeroGenerationRunInterrupted() {
+    try (RunStore store = open()) {
+      long runId = store.startRun(new RunSpec(1L, WorldConfig.defaults(), 5, 0, 0L));
+      store.reconcileInterruptedRuns();
+      assertThat(store.loadRun(runId).orElseThrow().status()).isEqualTo(RunStatus.INTERRUPTED);
     }
   }
 

@@ -13,6 +13,7 @@ import dev.maelitop.evolution.persistence.RunSpec;
 import dev.maelitop.evolution.persistence.RunStore;
 import dev.maelitop.evolution.persistence.StoredAgent;
 import dev.maelitop.evolution.persistence.StoredRun;
+import dev.maelitop.evolution.protocol.RunStatus;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -37,6 +38,7 @@ public final class RunService implements AutoCloseable {
   public RunService(RunStore store, WorldConfig config) {
     this.store = store;
     this.config = config;
+    store.reconcileInterruptedRuns();
   }
 
   public long start(long seed, int generations, int carnivores) {
@@ -50,15 +52,20 @@ public final class RunService implements AutoCloseable {
     return runId;
   }
 
-  public List<StoredRun> runs() {
+  public List<RunView> runs() {
     synchronized (lock) {
-      return store.listRuns();
+      List<StoredRun> stored = store.listRuns();
+      List<RunView> views = new ArrayList<>(stored.size());
+      for (StoredRun run : stored) {
+        views.add(RunView.of(run, store.currentGeneration(run.id())));
+      }
+      return views;
     }
   }
 
-  public Optional<StoredRun> run(long id) {
+  public Optional<RunView> run(long id) {
     synchronized (lock) {
-      return store.loadRun(id);
+      return store.loadRun(id).map(run -> RunView.of(run, store.currentGeneration(id)));
     }
   }
 
@@ -109,13 +116,32 @@ public final class RunService implements AutoCloseable {
   private void execute(long runId, long seed, int generations, int carnivores) {
     RandomGenerator rng = RandomGeneratorFactory.of("L64X128MixRandom").create(seed);
     try {
+      setStatus(runId, RunStatus.RUNNING);
       if (carnivores > 0) {
         runCoEvolution(runId, rng, generations, carnivores);
       } else {
         runSingle(runId, rng, generations);
       }
+      setStatus(runId, RunStatus.COMPLETED);
     } catch (RuntimeException e) {
+      // A hard kill or shutdown-interrupt instead leaves the run RUNNING; the next startup's
+      // reconcileInterruptedRuns() flips it to INTERRUPTED.
       log.error("run {} aborted", runId, e);
+      markInterrupted(runId);
+    }
+  }
+
+  private void setStatus(long runId, RunStatus status) {
+    synchronized (lock) {
+      store.updateRunStatus(runId, status);
+    }
+  }
+
+  private void markInterrupted(long runId) {
+    try {
+      setStatus(runId, RunStatus.INTERRUPTED);
+    } catch (RuntimeException e) {
+      log.warn("failed to mark run {} interrupted", runId, e);
     }
   }
 

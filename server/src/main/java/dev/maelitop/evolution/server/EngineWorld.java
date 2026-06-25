@@ -72,12 +72,10 @@ final class EngineWorld implements SimulationWorld {
 
   private static Color colorFor(Team team, long id) {
     float jitter = ((id * 0x9E3779B1L) >>> 40) / (float) (1 << 24);
-    float hue =
-        switch (team) {
-          case HERBIVORE -> 0.33f + 0.12f * jitter;
-          case CARNIVORE -> 0.02f + 0.06f * jitter;
-        };
-    return hsvColor(hue, 0.7f, 0.95f);
+    return switch (team) {
+      case HERBIVORE -> hsvColor(0.46f + 0.06f * jitter, 0.72f, 0.85f);
+      case CARNIVORE -> hsvColor(0.95f + 0.06f * jitter, 0.55f, 0.98f);
+    };
   }
 
   private static Color hsvColor(float h, float s, float v) {
