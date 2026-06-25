@@ -1,4 +1,4 @@
-rootProject.name = "genetic-evolution"
+rootProject.name = "genome-observatory"
 
 dependencyResolutionManagement {
   repositories { mavenCentral() }
