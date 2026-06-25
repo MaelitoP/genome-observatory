@@ -17,6 +17,8 @@
 
 hs_err_pid*
 
+*.db
+
 .gradle/
 build/
 

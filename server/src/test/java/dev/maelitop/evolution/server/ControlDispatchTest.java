@@ -6,8 +6,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.maelitop.evolution.core.domain.WorldConfig;
 import dev.maelitop.evolution.persistence.RunStore;
 import dev.maelitop.evolution.protocol.HelloMessage;
-import java.util.random.RandomGenerator;
-import java.util.random.RandomGeneratorFactory;
+import dev.maelitop.evolution.protocol.WorldSnapshot;
+import dev.maelitop.evolution.protocol.WorldStats;
+import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -57,8 +58,16 @@ class ControlDispatchTest {
   private SimulationServer server() {
     var config = new dev.maelitop.evolution.protocol.WorldConfig(100, 100);
     HelloMessage hello = new HelloMessage("test", 1L, config, 0L, 30);
-    RandomGenerator rng = RandomGeneratorFactory.of("L64X128MixRandom").create(1L);
-    BaselineWorld world = new BaselineWorld(config, rng, 1, 1, 30);
-    return new SimulationServer(0, hello, world, runs, control);
+    return new SimulationServer(0, hello, new FakeWorld(), runs, control);
+  }
+
+  private static final class FakeWorld implements SimulationWorld {
+    @Override
+    public void step() {}
+
+    @Override
+    public WorldSnapshot snapshot() {
+      return new WorldSnapshot(0, 0, 0, new WorldStats(0, 0, 0), List.of());
+    }
   }
 }

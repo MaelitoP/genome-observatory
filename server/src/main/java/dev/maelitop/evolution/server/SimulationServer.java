@@ -28,7 +28,7 @@ public final class SimulationServer {
 
   private final int port;
   private final HelloMessage hello;
-  private final BaselineWorld world;
+  private final SimulationWorld world;
   private final RunService runs;
   private final long basePeriodMs;
   private final Set<WsContext> sessions = ConcurrentHashMap.newKeySet();
@@ -38,12 +38,12 @@ public final class SimulationServer {
   private volatile ScheduledFuture<?> tickHandle;
   private Javalin app;
 
-  public SimulationServer(int port, HelloMessage hello, BaselineWorld world, RunService runs) {
+  public SimulationServer(int port, HelloMessage hello, SimulationWorld world, RunService runs) {
     this(port, hello, world, runs, new TickControl());
   }
 
   SimulationServer(
-      int port, HelloMessage hello, BaselineWorld world, RunService runs, TickControl control) {
+      int port, HelloMessage hello, SimulationWorld world, RunService runs, TickControl control) {
     this.port = port;
     this.hello = hello;
     this.world = world;
@@ -119,9 +119,13 @@ public final class SimulationServer {
     if (!control.allow()) {
       return;
     }
-    world.step();
-    String frame = json(world.snapshot());
-    sessions.removeIf(ctx -> !trySend(ctx, frame));
+    try {
+      world.step();
+      String frame = json(world.snapshot());
+      sessions.removeIf(ctx -> !trySend(ctx, frame));
+    } catch (RuntimeException e) {
+      log.error("simulation tick failed", e);
+    }
   }
 
   private boolean trySend(WsContext ctx, String frame) {

@@ -2,6 +2,7 @@ plugins { application }
 
 dependencies {
   implementation(project(":protocol"))
+  implementation(project(":simulation-core"))
   implementation(project(":persistence"))
   implementation(libs.javalin)
   implementation(libs.slf4j.api)
